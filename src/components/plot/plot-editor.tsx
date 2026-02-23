@@ -387,9 +387,9 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
       </Card>
 
       {/* Plot Points Timeline */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h3 className="text-sm font-medium">プロットポイント</h3>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -414,7 +414,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
             ) : (
               <ListOrdered className="mr-1.5 h-3.5 w-3.5" />
             )}
-            {isOrganizing ? "整理中..." : "ポイントを整理"}
+            {isOrganizing ? "整理中..." : "整理"}
           </Button>
           <Button
             size="sm"
@@ -430,7 +430,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
             }}
           >
             <Plus className="mr-1.5 h-3.5 w-3.5" />
-            ポイント追加
+            追加
           </Button>
         </div>
       </div>
@@ -460,12 +460,12 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
                         key={point.id}
                         className={`border-l-4 ${ACT_COLORS[point.act] || ""}`}
                       >
-                        <CardHeader className="flex flex-row items-start gap-2 py-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                        <CardHeader className="flex flex-row items-start gap-2 py-3 px-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <CardTitle className="text-sm">{point.title}</CardTitle>
                               {point.isMajorTurningPoint && (
-                                <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                                <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
                               )}
                               {point.chapterHints && point.chapterHints.length > 0 && (
                                 <span className="text-xs text-muted-foreground">
@@ -477,7 +477,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
                               {point.description}
                             </p>
                           </div>
-                          <div className="flex gap-1">
+                          <div className="flex shrink-0 gap-1">
                             <Button
                               variant="ghost"
                               size="icon"
@@ -584,7 +584,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
 
       {/* Edit Point Dialog */}
       <Dialog open={!!editingPoint} onOpenChange={(open) => !open && setEditingPoint(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="w-[95vw] max-w-lg">
           <DialogHeader>
             <DialogTitle>{isNewPoint ? "ポイント追加" : "ポイント編集"}</DialogTitle>
           </DialogHeader>

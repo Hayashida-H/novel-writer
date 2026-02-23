@@ -128,8 +128,8 @@ export function CharacterList({ projectId }: CharacterListProps) {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-1.5">
             <Button
               variant={filterRole === "all" ? "default" : "outline"}
               size="sm"
@@ -258,7 +258,7 @@ export function CharacterList({ projectId }: CharacterListProps) {
       </div>
 
       <Dialog open={!!editingChar} onOpenChange={(open) => !open && setEditingChar(null)}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[85vh] w-[95vw] max-w-2xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isNew ? "登場人物を追加" : "登場人物を編集"}</DialogTitle>
           </DialogHeader>
@@ -362,7 +362,7 @@ export function CharacterList({ projectId }: CharacterListProps) {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <div>
                   <Label>所属・大区分</Label>
                   <Input

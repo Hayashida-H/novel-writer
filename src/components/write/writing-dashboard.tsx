@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Play,
+  FastForward,
   FileText,
   Loader2,
   CheckCircle,
@@ -131,6 +132,15 @@ function getAgentStatusesForChapter(
     }
   }
   return statuses;
+}
+
+/** Check if a chapter has a partially completed pipeline (some done, some not) */
+function hasResumableProgress(chapterId: string, tasks: TaskItem[]): boolean {
+  const statuses = getAgentStatusesForChapter(chapterId, tasks);
+  const hasCompleted = Array.from(statuses.values()).some((s) => s === "completed");
+  const hasNotStarted = Array.from(statuses.values()).some((s) => s === "not_started");
+  const hasRunning = Array.from(statuses.values()).some((s) => s === "running");
+  return hasCompleted && hasNotStarted && !hasRunning;
 }
 
 interface WritingDashboardProps {
@@ -252,6 +262,62 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     }
   }, [projectId, refreshTasks]);
 
+  // Resume episode from checkpoint (reuse completed agent outputs)
+  const handleResumeEpisode = useCallback(async (chapterId: string) => {
+    setWritingChapterId(chapterId);
+    try {
+      const res = await fetch("/api/agents/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, chapterId, mode: "write", resume: true }),
+      });
+
+      if (!res.ok) {
+        alert("続きからの開始に失敗しました");
+        return;
+      }
+      if (!res.body) return;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "agent_start" || event.type === "agent_complete") {
+              await refreshTasks();
+            } else if (event.type === "chapter_split") {
+              const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
+              if (chapRes.ok) setChapters(await chapRes.json());
+            } else if (event.type === "pipeline_complete") {
+              const [chapRes, taskRes] = await Promise.all([
+                fetch(`/api/chapters?projectId=${projectId}`),
+                fetch(`/api/agent-tasks?projectId=${projectId}`),
+              ]);
+              if (chapRes.ok) setChapters(await chapRes.json());
+              if (taskRes.ok) setTasks(await taskRes.json());
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (error) {
+      console.error("Episode resume failed:", error);
+    } finally {
+      setWritingChapterId(null);
+    }
+  }, [projectId, refreshTasks]);
+
   const handleForceCancel = useCallback(async () => {
     try {
       const res = await fetch(`/api/agent-tasks?projectId=${projectId}`, {
@@ -317,42 +383,61 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
   const renderChapterCard = (chapter: ChapterItem) => {
     const statusInfo = CHAPTER_STATUS_LABELS[chapter.status] || CHAPTER_STATUS_LABELS.outlined;
     const isWriting = writingChapterId === chapter.id;
+    const canResume = hasResumableProgress(chapter.id, tasks);
     return (
       <Card key={chapter.id} className="transition-colors hover:bg-accent/50">
-        <CardHeader className="flex flex-row items-center gap-3 py-2 px-3">
-          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-xs font-bold">
-            {chapter.chapterNumber}
-          </div>
-          <div className="flex-1 cursor-pointer" onClick={() => setSelectedChapter(chapter)}>
-            <CardTitle className="text-sm">
-              {chapter.title || `第${chapter.chapterNumber}話`}
-            </CardTitle>
-            {chapter.synopsis && (
-              <CardDescription className="line-clamp-1 text-xs">
-                {chapter.synopsis}
-              </CardDescription>
-            )}
-          </div>
+        <CardHeader className="py-2 px-3">
           <div className="flex items-center gap-2">
-            {renderAgentIcons(chapter.id)}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              disabled={isWriting || !!writingChapterId}
-              onClick={(e) => { e.stopPropagation(); handleWriteEpisode(chapter.id); }}
-              title="執筆"
-            >
-              {isWriting ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
-              ) : (
-                <Play className="h-3.5 w-3.5" />
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
+              {chapter.chapterNumber}
+            </div>
+            <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setSelectedChapter(chapter)}>
+              <CardTitle className="truncate text-sm">
+                {chapter.title || `第${chapter.chapterNumber}話`}
+              </CardTitle>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {canResume && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-amber-600"
+                  disabled={isWriting || !!writingChapterId}
+                  onClick={(e) => { e.stopPropagation(); handleResumeEpisode(chapter.id); }}
+                  title="続きから"
+                >
+                  <FastForward className="h-3.5 w-3.5" />
+                </Button>
               )}
-            </Button>
-            <span className="text-xs text-muted-foreground">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                disabled={isWriting || !!writingChapterId}
+                onClick={(e) => { e.stopPropagation(); handleWriteEpisode(chapter.id); }}
+                title="最初から執筆"
+              >
+                {isWriting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />
+                ) : (
+                  <Play className="h-3.5 w-3.5" />
+                )}
+              </Button>
+              <span className="hidden text-xs text-muted-foreground sm:inline">
+                {(chapter.wordCount || 0).toLocaleString()}字
+              </span>
+              <span className={`hidden items-center rounded-full px-2 py-0.5 text-xs font-medium sm:inline-flex ${statusInfo.color}`}>
+                {statusInfo.ja}
+              </span>
+            </div>
+          </div>
+          {/* Agent icons + mobile meta on second row */}
+          <div className="mt-1 flex items-center gap-2 pl-8">
+            {renderAgentIcons(chapter.id)}
+            <span className="text-xs text-muted-foreground sm:hidden">
               {(chapter.wordCount || 0).toLocaleString()}字
             </span>
-            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusInfo.color}`}>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium sm:hidden ${statusInfo.color}`}>
               {statusInfo.ja}
             </span>
           </div>

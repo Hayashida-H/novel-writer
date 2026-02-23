@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, desc } from "drizzle-orm";
 import { getClaudeClient } from "@/lib/claude/client";
 import { createSSEStream } from "@/lib/claude/streaming";
 import { AgentPipeline } from "@/lib/agents/pipeline";
@@ -116,11 +116,12 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
-    const { projectId, chapterId, mode = "write", customSteps } = body as {
+    const { projectId, chapterId, mode = "write", customSteps, resume = false } = body as {
       projectId: string;
       chapterId?: string;
       mode?: "write" | "edit" | "custom";
       customSteps?: PipelineStep[];
+      resume?: boolean;
     };
 
     if (!projectId) {
@@ -182,6 +183,39 @@ export async function POST(req: NextRequest) {
       steps = buildWritingPipeline(chapterNumber);
     }
 
+    // Build preloaded outputs from completed tasks when resuming
+    let preloadedOutputs: Map<number, string> | undefined;
+    if (resume && chapterId) {
+      const completedTasks = await db
+        .select()
+        .from(agentTasks)
+        .where(
+          and(
+            eq(agentTasks.projectId, projectId),
+            eq(agentTasks.chapterId, chapterId),
+            eq(agentTasks.status, "completed")
+          )
+        )
+        .orderBy(desc(agentTasks.completedAt));
+
+      preloadedOutputs = new Map();
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        // Find the most recently completed task matching this step's agentType + taskType
+        const match = completedTasks.find(
+          (t) => t.agentType === step.agentType && t.taskType === step.taskType && t.output
+        );
+        if (match?.output) {
+          preloadedOutputs.set(i, match.output);
+        }
+      }
+
+      // If no completed steps found, fall back to normal execution
+      if (preloadedOutputs.size === 0) {
+        preloadedOutputs = undefined;
+      }
+    }
+
     // Create SSE stream
     const { stream, send, close } = createSSEStream();
 
@@ -207,7 +241,10 @@ export async function POST(req: NextRequest) {
 
         // Create task records for tracking
         const taskIds: string[] = [];
-        for (const step of steps) {
+        for (let i = 0; i < steps.length; i++) {
+          const step = steps[i];
+          // If resuming and this step was preloaded, mark it as completed immediately
+          const isPreloaded = preloadedOutputs?.has(i);
           const [task] = await db
             .insert(agentTasks)
             .values({
@@ -215,8 +252,11 @@ export async function POST(req: NextRequest) {
               chapterId: chapterId || null,
               agentType: step.agentType,
               taskType: step.taskType,
-              status: "queued",
+              status: isPreloaded ? "completed" : "queued",
               inputContext: { description: step.description },
+              output: isPreloaded ? preloadedOutputs!.get(i) : null,
+              startedAt: isPreloaded ? new Date() : null,
+              completedAt: isPreloaded ? new Date() : null,
             })
             .returning();
           taskIds.push(task.id);
@@ -226,6 +266,7 @@ export async function POST(req: NextRequest) {
           projectId,
           chapterId,
           steps,
+          preloadedOutputs,
           onEvent: async (event: StreamEvent) => {
             send(event);
 

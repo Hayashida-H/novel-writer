@@ -16,6 +16,8 @@ export interface PipelineConfig {
   chapterId?: string;
   steps: PipelineStep[];
   onEvent?: (event: StreamEvent) => void;
+  /** Pre-loaded outputs from previously completed steps (key = step index). Steps with pre-loaded outputs will be skipped. */
+  preloadedOutputs?: Map<number, string>;
 }
 
 export type PipelineState = "idle" | "running" | "paused" | "cancelled" | "completed" | "error";
@@ -103,9 +105,16 @@ export class AgentPipeline {
   }
 
   async execute(config: PipelineConfig): Promise<AgentOutput[]> {
-    const { projectId, chapterId, steps, onEvent } = config;
+    const { projectId, chapterId, steps, onEvent, preloadedOutputs } = config;
     const results: AgentOutput[] = [];
     const stepOutputs: Map<number, string> = new Map();
+
+    // Pre-populate outputs from previously completed steps
+    if (preloadedOutputs) {
+      for (const [index, output] of preloadedOutputs) {
+        stepOutputs.set(index, output);
+      }
+    }
 
     this._state = "running";
     this.totalSteps = steps.length;
@@ -129,6 +138,22 @@ export class AgentPipeline {
       onEvent?.({ type: "pipeline_plan", plan });
 
       for (let i = 0; i < steps.length; i++) {
+        // Skip steps that already have preloaded outputs
+        if (preloadedOutputs?.has(i)) {
+          const step = steps[i];
+          const cachedContent = stepOutputs.get(i) || "";
+          const cachedOutput: AgentOutput = {
+            agentType: step.agentType,
+            taskType: step.taskType,
+            content: cachedContent,
+            tokenUsage: { input: 0, output: 0 },
+          };
+          onEvent?.({ type: "agent_start", agentType: step.agentType });
+          onEvent?.({ type: "agent_complete", agentType: step.agentType, output: cachedOutput });
+          results.push(cachedOutput);
+          continue;
+        }
+
         // Check for cancellation (use getter to avoid TS flow narrowing)
         if (this.state === "cancelled") {
           onEvent?.({ type: "error", message: "パイプラインがキャンセルされました" });
