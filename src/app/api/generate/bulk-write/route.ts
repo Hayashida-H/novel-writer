@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { chapters, agentTasks } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
@@ -102,6 +103,8 @@ function buildWritingPipeline(chapterNumber: number): PipelineStep[] {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const { projectId, startChapter = 1 } = await req.json();
     if (!projectId) {

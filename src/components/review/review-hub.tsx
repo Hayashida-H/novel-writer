@@ -27,6 +27,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
   BookOpen,
   MessageSquare,
   AlertTriangle,
@@ -37,6 +42,7 @@ import {
   CheckCircle,
   XCircle,
   Smartphone,
+  List,
 } from "lucide-react";
 import {
   ANNOTATION_TYPE_LABELS,
@@ -113,6 +119,7 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
     comment: "",
     annotationType: "comment" as string,
   });
+  const [mobileChapterOpen, setMobileChapterOpen] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -200,105 +207,109 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
     ? selectedChapter.content.split("\n").filter((p) => p.trim())
     : [];
 
+  const renderChapterCard = (chapter: ChapterItem, onSelect?: () => void) => (
+    <Card
+      key={chapter.id}
+      className={`cursor-pointer transition-colors hover:bg-accent/50 ${
+        selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
+      }`}
+      onClick={() => {
+        setSelectedChapter(chapter);
+        onSelect?.();
+      }}
+    >
+      <CardHeader className="py-2 px-3">
+        <CardTitle className="text-xs">
+          第{chapter.chapterNumber}話: {chapter.title || "無題"}
+        </CardTitle>
+        <CardDescription className="flex items-center gap-2 text-xs">
+          <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
+          {chapter.content && (
+            <a
+              href={`/p/${projectId}/review/chapters/${chapter.id}`}
+              className="inline-flex items-center gap-0.5 text-primary hover:underline"
+              onClick={(e) => e.stopPropagation()}
+              title="モバイルリーダーで開く"
+            >
+              <Smartphone className="h-3 w-3" />
+              読む
+            </a>
+          )}
+        </CardDescription>
+      </CardHeader>
+    </Card>
+  );
+
+  const renderChapterList = (onSelect?: () => void) => {
+    if (chapters.length === 0) {
+      return <p className="text-xs text-muted-foreground">話がまだありません</p>;
+    }
+    const orphanChapters = chapters.filter(
+      (c) => !c.arcId || !arcs.find((a) => a.id === c.arcId)
+    );
+    return (
+      <>
+        {arcs
+          .sort((a, b) => a.arcNumber - b.arcNumber)
+          .map((arc) => {
+            const arcChapters = chapters.filter((c) => c.arcId === arc.id);
+            if (arcChapters.length === 0) return null;
+            return (
+              <div key={arc.id} className="space-y-1">
+                <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
+                  第{arc.arcNumber}章: {arc.title}
+                </h4>
+                {arcChapters.map((ch) => renderChapterCard(ch, onSelect))}
+              </div>
+            );
+          })}
+        {orphanChapters.length > 0 && (
+          <div className="space-y-1">
+            {arcs.length > 0 && (
+              <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
+                未分類
+              </h4>
+            )}
+            {orphanChapters.map((ch) => renderChapterCard(ch, onSelect))}
+          </div>
+        )}
+      </>
+    );
+  };
+
   return (
     <>
-      <div className="flex h-full gap-4">
-        {/* Episode List Sidebar */}
-        <div className="w-72 shrink-0 space-y-2 overflow-y-auto">
+      <div className="flex h-full gap-0 md:gap-4">
+        {/* Desktop sidebar */}
+        <div className="hidden md:block w-72 shrink-0 space-y-2 overflow-y-auto">
           <h3 className="text-sm font-medium text-muted-foreground">話を選択</h3>
-          {chapters.length === 0 ? (
-            <p className="text-xs text-muted-foreground">話がまだありません</p>
-          ) : (
-            <>
-              {arcs
-                .sort((a, b) => a.arcNumber - b.arcNumber)
-                .map((arc) => {
-                  const arcChapters = chapters.filter((c) => c.arcId === arc.id);
-                  if (arcChapters.length === 0) return null;
-                  return (
-                    <div key={arc.id} className="space-y-1">
-                      <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
-                        第{arc.arcNumber}章: {arc.title}
-                      </h4>
-                      {arcChapters.map((chapter) => (
-                        <Card
-                          key={chapter.id}
-                          className={`cursor-pointer transition-colors hover:bg-accent/50 ${
-                            selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
-                          }`}
-                          onClick={() => setSelectedChapter(chapter)}
-                        >
-                          <CardHeader className="py-2 px-3">
-                            <CardTitle className="text-xs">
-                              第{chapter.chapterNumber}話: {chapter.title || "無題"}
-                            </CardTitle>
-                            <CardDescription className="flex items-center gap-2 text-xs">
-                              <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
-                              {chapter.content && (
-                                <a
-                                  href={`/p/${projectId}/review/chapters/${chapter.id}`}
-                                  className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title="モバイルリーダーで開く"
-                                >
-                                  <Smartphone className="h-3 w-3" />
-                                  読む
-                                </a>
-                              )}
-                            </CardDescription>
-                          </CardHeader>
-                        </Card>
-                      ))}
-                    </div>
-                  );
-                })}
-              {/* Chapters without arc */}
-              {chapters.filter((c) => !c.arcId || !arcs.find((a) => a.id === c.arcId)).length > 0 && (
-                <div className="space-y-1">
-                  {arcs.length > 0 && (
-                    <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
-                      未分類
-                    </h4>
-                  )}
-                  {chapters
-                    .filter((c) => !c.arcId || !arcs.find((a) => a.id === c.arcId))
-                    .map((chapter) => (
-                      <Card
-                        key={chapter.id}
-                        className={`cursor-pointer transition-colors hover:bg-accent/50 ${
-                          selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
-                        }`}
-                        onClick={() => setSelectedChapter(chapter)}
-                      >
-                        <CardHeader className="py-2 px-3">
-                          <CardTitle className="text-xs">
-                            第{chapter.chapterNumber}話: {chapter.title || "無題"}
-                          </CardTitle>
-                          <CardDescription className="flex items-center gap-2 text-xs">
-                            <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
-                            {chapter.content && (
-                              <a
-                                href={`/p/${projectId}/review/chapters/${chapter.id}`}
-                                className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                                onClick={(e) => e.stopPropagation()}
-                                title="モバイルリーダーで開く"
-                              >
-                                <Smartphone className="h-3 w-3" />
-                                読む
-                              </a>
-                            )}
-                          </CardDescription>
-                        </CardHeader>
-                      </Card>
-                    ))}
-                </div>
-              )}
-            </>
-          )}
+          {renderChapterList()}
         </div>
+
+        {/* Mobile chapter drawer */}
+        <Sheet open={mobileChapterOpen} onOpenChange={setMobileChapterOpen}>
+          <SheetContent side="left" className="w-72 overflow-y-auto p-4">
+            <SheetTitle className="text-sm font-medium mb-2">話を選択</SheetTitle>
+            {renderChapterList(() => setMobileChapterOpen(false))}
+          </SheetContent>
+        </Sheet>
 
         {/* Main Content Area */}
         <div className="flex-1">
+          {/* Mobile chapter selector */}
+          <div className="flex items-center gap-2 mb-3 md:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMobileChapterOpen(true)}
+            >
+              <List className="mr-1.5 h-3.5 w-3.5" />
+              {selectedChapter
+                ? `第${selectedChapter.chapterNumber}話`
+                : "話を選択"}
+            </Button>
+          </div>
+
           {!selectedChapter ? (
             <div className="flex h-full items-center justify-center">
               <div className="text-center text-muted-foreground">
@@ -309,8 +320,8 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
           ) : (
             <div className="space-y-4">
               {/* Header */}
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-base font-bold md:text-lg truncate">
                   第{selectedChapter.chapterNumber}話: {selectedChapter.title || "無題"}
                 </h2>
                 <Button size="sm" onClick={() => setShowAnnotationDialog(true)}>

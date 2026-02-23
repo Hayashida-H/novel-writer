@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { getClaudeClient } from "@/lib/claude/client";
 import { SIMILARITY_CHECK_PROMPT } from "@/lib/generation/prompts";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const { synopsis, genre, themes, plotPoints } = await req.json();
 

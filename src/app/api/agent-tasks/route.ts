@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const projectId = req.nextUrl.searchParams.get("projectId");
     if (!projectId) {
@@ -33,6 +36,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { projectId, chapterId, agentType, taskType, inputContext } = body;
@@ -64,6 +69,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { id, status, output, errorMessage, tokenUsage } = body;

@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { ClaudeClient } from "@/lib/claude/client";
 import { getDb } from "@/lib/db";
 import { plotStructure, plotPoints, arcs, projects } from "@/lib/db/schema";
@@ -18,6 +19,8 @@ interface GeneratedArc {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const { projectId } = await req.json();
     if (!projectId) {

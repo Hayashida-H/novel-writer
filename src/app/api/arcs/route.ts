@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { arcs, chapters } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req, ["manager", "reviewer"]);
+    if (authResult instanceof NextResponse) return authResult;
+
     const projectId = req.nextUrl.searchParams.get("projectId");
     if (!projectId) {
       return NextResponse.json({ error: "projectId is required" }, { status: 400 });
@@ -28,6 +32,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req);
+    if (authResult instanceof NextResponse) return authResult;
+
     const { projectId, arcNumber, title, description } = await req.json();
     if (!projectId || !title) {
       return NextResponse.json({ error: "projectId and title are required" }, { status: 400 });
@@ -65,6 +72,9 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req);
+    if (authResult instanceof NextResponse) return authResult;
+
     const { id, title, description, arcNumber } = await req.json();
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -91,6 +101,9 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req);
+    if (authResult instanceof NextResponse) return authResult;
+
     const id = req.nextUrl.searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });

@@ -1,14 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { chatMessages } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const { sessionId } = await params;
     const db = getDb();

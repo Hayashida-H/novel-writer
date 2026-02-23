@@ -4,6 +4,14 @@ import { useState, useEffect, useCallback } from "react";
 import { ChatMessages, type ChatMessage } from "./chat-messages";
 import { ChatInput } from "./chat-input";
 import { SessionList, type ChatSession } from "./session-list";
+import { MessageSquare } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 interface ChatContainerProps {
   projectId: string;
@@ -16,6 +24,9 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
   const [streamingContent, setStreamingContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [reflections, setReflections] = useState<{ target: string; action: string }[]>([]);
+  const [mobileSessionOpen, setMobileSessionOpen] = useState(false);
+
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
 
   // Load sessions
   useEffect(() => {
@@ -68,6 +79,7 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
           setSessions((prev) => [session, ...prev]);
           setActiveSessionId(session.id);
           setMessages([]);
+          setMobileSessionOpen(false);
         }
       } catch (error) {
         console.error("Failed to create session:", error);
@@ -173,13 +185,45 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
 
   return (
     <div className="flex h-full">
-      <SessionList
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        onSelectSession={setActiveSessionId}
-        onNewSession={createSession}
-      />
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        <SessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={setActiveSessionId}
+          onNewSession={createSession}
+        />
+      </div>
+
+      {/* Mobile session drawer */}
+      <Sheet open={mobileSessionOpen} onOpenChange={setMobileSessionOpen}>
+        <SheetContent side="left" className="w-64 p-0">
+          <SheetTitle className="sr-only">セッション一覧</SheetTitle>
+          <SessionList
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelectSession={(id) => {
+              setActiveSessionId(id);
+              setMobileSessionOpen(false);
+            }}
+            onNewSession={createSession}
+          />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex flex-1 flex-col">
+        {/* Mobile session selector bar */}
+        <div className="flex items-center gap-2 border-b px-3 py-2 md:hidden">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMobileSessionOpen(true)}
+          >
+            <MessageSquare className="mr-1.5 h-4 w-4" />
+            {activeSession ? activeSession.title || "チャット" : "セッション一覧"}
+          </Button>
+        </div>
+
         {activeSessionId ? (
           <>
             <ChatMessages messages={messages} streamingContent={streamingContent || undefined} />
@@ -199,14 +243,23 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
           </>
         ) : (
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
-            <div className="text-center">
+            <div className="text-center px-4">
               <p className="text-lg font-medium">準備チャット</p>
               <p className="mt-1 text-sm">
-                左のパネルから新しいチャットを始めましょう
+                新しいチャットを始めましょう
               </p>
               <p className="mt-2 text-xs">
                 プロット・キャラクター・世界観のトピックを選べます
               </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4 md:hidden"
+                onClick={() => setMobileSessionOpen(true)}
+              >
+                <MessageSquare className="mr-1.5 h-4 w-4" />
+                セッション一覧
+              </Button>
             </div>
           </div>
         )}

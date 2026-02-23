@@ -1,10 +1,13 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { exportProjectAsMarkdown } from "@/lib/export/markdown";
 import { exportProjectAsPlaintext } from "@/lib/export/plaintext";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const projectId = req.nextUrl.searchParams.get("projectId");
     const format = req.nextUrl.searchParams.get("format") || "markdown";

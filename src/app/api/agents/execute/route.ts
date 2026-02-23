@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -9,6 +9,7 @@ import { generateChapterSummary } from "@/lib/agents/summary";
 import { extractContentFromCheck } from "@/lib/agents/content-extractor";
 import type { StreamEvent } from "@/types/agent";
 import type { PipelineStep } from "@/lib/agents/pipeline";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min for long pipelines
@@ -103,6 +104,8 @@ function buildWritingPipeline(chapterNumber: number): PipelineStep[] {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { projectId, chapterId, mode = "write", customSteps } = body as {

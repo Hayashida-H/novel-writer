@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { getDb } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { desc } from "drizzle-orm";
+import { LogoutButton } from "@/components/auth/logout-button";
 
 const STATUS_LABELS: Record<
   string,
@@ -35,19 +36,22 @@ export default async function HomePage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Novel Writer</h1>
-            <p className="mt-1 text-muted-foreground">
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Novel Writer</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
               AI小説自動生成アプリケーション
             </p>
           </div>
-          <Button asChild>
-            <Link href="/projects/new">
-              <Plus className="mr-2 h-4 w-4" />
-              新規プロジェクト
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild>
+              <Link href="/projects/new">
+                <Plus className="mr-2 h-4 w-4" />
+                新規プロジェクト
+              </Link>
+            </Button>
+            <LogoutButton />
+          </div>
         </div>
 
         {projectList.length === 0 ? (

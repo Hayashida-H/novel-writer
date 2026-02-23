@@ -1,10 +1,11 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { chatMessages, chatSessions, characters, worldSettings, glossary } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { buildProjectContext, formatContextForPrompt } from "@/lib/agents/context-builder";
 import { ClaudeClient } from "@/lib/claude/client";
 import type { ClaudeMessage } from "@/lib/claude/client";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -150,6 +151,8 @@ const TOPIC_SYSTEM_PROMPTS: Record<string, string> = {
 };
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { sessionId, content } = body;

@@ -2,11 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { annotations, annotationBatches } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req, ["manager", "reviewer"]);
+    if (authResult instanceof NextResponse) return authResult;
+
     const chapterId = req.nextUrl.searchParams.get("chapterId");
     const projectId = req.nextUrl.searchParams.get("projectId");
 
@@ -47,6 +51,9 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req, ["manager", "reviewer"]);
+    if (authResult instanceof NextResponse) return authResult;
+
     const body = await req.json();
     const {
       chapterId,
@@ -90,6 +97,9 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req);
+    if (authResult instanceof NextResponse) return authResult;
+
     const body = await req.json();
     const { id, ...updates } = body;
 
@@ -117,6 +127,9 @@ export async function PUT(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req);
+    if (authResult instanceof NextResponse) return authResult;
+
     const id = req.nextUrl.searchParams.get("id");
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });

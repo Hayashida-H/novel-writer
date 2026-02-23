@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BookOpen,
   MessageSquare,
@@ -17,15 +17,16 @@ import {
   BookText,
   ListTree,
   ShieldCheck,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 
 interface SidebarProps {
   projectId: string;
   projectTitle?: string;
+  userRole?: "manager" | "reviewer";
 }
 
 const navItems = [
@@ -63,14 +64,31 @@ const navItems = [
   },
 ];
 
-export function Sidebar({ projectId, projectTitle }: SidebarProps) {
+const reviewerNavItems = [
+  {
+    group: "レビュー",
+    items: [{ href: "review", label: "レビュー", icon: Eye }],
+  },
+];
+
+export function Sidebar({ projectId, projectTitle, userRole }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const basePath = `/p/${projectId}`;
+  const items = userRole === "reviewer" ? reviewerNavItems : navItems;
+
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+  };
 
   return (
     <aside className="flex h-full w-64 flex-col border-r bg-sidebar text-sidebar-foreground">
       <div className="flex h-14 items-center gap-2 border-b px-4">
-        <Link href="/" className="text-muted-foreground hover:text-foreground">
+        <Link
+          href={userRole === "reviewer" ? "/reviewer" : "/"}
+          className="text-muted-foreground hover:text-foreground"
+        >
           <ChevronLeft className="h-4 w-4" />
         </Link>
         <Link href={basePath} className="flex items-center gap-2 truncate">
@@ -82,7 +100,7 @@ export function Sidebar({ projectId, projectTitle }: SidebarProps) {
       </div>
 
       <ScrollArea className="flex-1 px-3 py-4">
-        {navItems.map((group) => (
+        {items.map((group) => (
           <div key={group.group} className="mb-4">
             <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">
               {group.group}
@@ -113,6 +131,18 @@ export function Sidebar({ projectId, projectTitle }: SidebarProps) {
           </div>
         ))}
       </ScrollArea>
+
+      <div className="border-t p-3">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-muted-foreground"
+          onClick={handleLogout}
+        >
+          <LogOut className="h-4 w-4" />
+          ログアウト
+        </Button>
+      </div>
     </aside>
   );
 }

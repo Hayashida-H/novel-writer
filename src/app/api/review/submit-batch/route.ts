@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { annotations, annotationBatches, chapters } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
@@ -7,12 +7,16 @@ import { createSSEStream } from "@/lib/claude/streaming";
 import { buildAgentContext } from "@/lib/agents/context-builder";
 import { BaseAgent } from "@/lib/agents/base-agent";
 import { generateChapterSummary } from "@/lib/agents/summary";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await requireAuth(req, ["manager", "reviewer"]);
+    if (authResult instanceof NextResponse) return authResult;
+
     const body = await req.json();
     const { projectId, chapterId, annotationIds } = body as {
       projectId: string;

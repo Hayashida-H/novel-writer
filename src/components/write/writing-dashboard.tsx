@@ -350,7 +350,7 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     <>
       <div className="space-y-6">
         {/* Stats Bar */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
           <Card>
             <CardContent className="pt-4">
               <div className="text-2xl font-bold">{chapters.length}</div>
@@ -508,7 +508,7 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
 
       {/* Chapter Editor Dialog */}
       <Dialog open={!!selectedChapter} onOpenChange={(open) => !open && setSelectedChapter(null)}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-[95vw] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               第{selectedChapter?.chapterNumber}話: {selectedChapter?.title || "無題"}

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPipeline, getActivePipelineIds } from "@/lib/agents/pipeline";
+import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 // GET: Get pipeline status
 export async function GET(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   const pipelineId = req.nextUrl.searchParams.get("pipelineId");
 
   if (pipelineId) {
@@ -26,6 +29,8 @@ export async function GET(req: NextRequest) {
 
 // POST: Control pipeline (pause/resume/cancel)
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { pipelineId, action } = body as {

@@ -1,4 +1,5 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { ClaudeClient } from "@/lib/claude/client";
 import type { PlotCandidate } from "@/types/plot-suggestion";
 
@@ -93,6 +94,8 @@ function parseJsonResponse(text: string): PlotCandidate[] {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { genre, preferences, homage, count = 3 } = body;

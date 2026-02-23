@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { plotStructure, plotPoints } from "@/lib/db/schema";
 import { eq, asc } from "drizzle-orm";
@@ -6,6 +7,8 @@ import { eq, asc } from "drizzle-orm";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const projectId = req.nextUrl.searchParams.get("projectId");
     if (!projectId) {
@@ -40,6 +43,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { projectId, structureType, synopsis, themes, points: pointsData } = body;
@@ -105,6 +110,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
     const { type } = body;
@@ -149,6 +156,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
   try {
     const id = req.nextUrl.searchParams.get("id");
     const type = req.nextUrl.searchParams.get("type") || "point";
