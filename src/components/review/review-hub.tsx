@@ -36,6 +36,7 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
+  Smartphone,
 } from "lucide-react";
 import {
   ANNOTATION_TYPE_LABELS,
@@ -206,8 +207,19 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
                   <CardTitle className="text-xs">
                     第{chapter.chapterNumber}章: {chapter.title || "無題"}
                   </CardTitle>
-                  <CardDescription className="text-xs">
-                    {(chapter.wordCount || 0).toLocaleString()}字
+                  <CardDescription className="flex items-center gap-2 text-xs">
+                    <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
+                    {chapter.content && (
+                      <a
+                        href={`/p/${projectId}/review/chapters/${chapter.id}`}
+                        className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                        title="モバイルリーダーで開く"
+                      >
+                        <Smartphone className="h-3 w-3" />
+                        読む
+                      </a>
+                    )}
                   </CardDescription>
                 </CardHeader>
               </Card>
