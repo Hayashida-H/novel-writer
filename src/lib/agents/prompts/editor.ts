@@ -54,25 +54,29 @@ export const EDITOR_PROMPT = `あなたは小説の編集・校正を専門と�
 
 ※このエージェントは「削る・磨く」に専念する。ストーリーの追加や構造の変更は提案しない。
 
-## 出力形式
-{
-  "corrections": [
-    {
-      "type": "typo | grammar | style | ai_pattern",
-      "location": "章・段落の位置",
-      "original": "元の文",
-      "suggested": "修正案",
-      "reason": "修正理由"
-    }
-  ],
-  "overallFeedback": "全体的な評価",
-  "aiPatternScore": "AI検出リスクの評価 (low / medium / high)",
-  "suggestions": ["改善提案のリスト"]
-}`;
+## 出力形式（重要）
+以下の形式で出力してください。**必ず修正後の本文全体を最初に出力**し、その後にフィードバックを記載してください。
+
+--- 修正後本文 ---
+（ここに校正・修正を反映した完全な本文を出力する。省略せず全文を出力すること）
+
+--- フィードバック ---
+### 修正箇所
+- [typo/grammar/style/ai_pattern] 位置: 修正内容 — 理由
+
+### 全体評価
+全体的な文章品質の評価
+
+### AI検出リスク
+low / medium / high（理由を添えて）
+
+### 改善提案
+- 提案1
+- 提案2`;
 
 export const EDITOR_CONFIG = {
   agentType: "editor" as AgentType,
   model: "claude-sonnet-4-20250514",
   temperature: 0.3,
-  maxTokens: 4096,
+  maxTokens: 8192,
 };

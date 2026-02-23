@@ -116,6 +116,38 @@ function buildWritingPipeline(chapterNumber: number): StepDef[] {
   ];
 }
 
+/**
+ * Extract the corrected prose from editor output.
+ * Expected format: "--- 修正後本文 ---\n...\n--- フィードバック ---\n..."
+ * Falls back to stripping JSON and returning raw text.
+ */
+function extractEditorContent(raw: string): string {
+  // Try to extract between markers
+  const startMarker = /---\s*修正後本文\s*---/;
+  const endMarker = /---\s*フィードバック\s*---/;
+
+  const startMatch = raw.match(startMarker);
+  if (startMatch && startMatch.index !== undefined) {
+    const contentStart = startMatch.index + startMatch[0].length;
+    const endMatch = raw.match(endMarker);
+    if (endMatch && endMatch.index !== undefined) {
+      return raw.slice(contentStart, endMatch.index).trim();
+    }
+    // No end marker — everything after start marker is content
+    return raw.slice(contentStart).trim();
+  }
+
+  // Fallback: if the output looks like JSON, it's the old format — not usable as chapter content
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{") && trimmed.includes('"corrections"')) {
+    console.warn("[extractEditorContent] Editor output is old JSON format, cannot extract content");
+    return "";
+  }
+
+  // Otherwise return raw content (might be plain text)
+  return raw.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim();
+}
+
 export async function POST(req: NextRequest) {
   const authResult = await requireAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -250,20 +282,24 @@ export async function POST(req: NextRequest) {
         if (step.agentType === "writer" || step.agentType === "editor") {
           try {
             const content = step.agentType === "editor"
-              ? result.output.content.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim()
-              : result.output.content;
+              ? extractEditorContent(result.rawContent)
+              : result.output.content.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim();
 
-            await db
-              .update(chapters)
-              .set({
-                content,
-                wordCount: content.length,
-                status: "draft",
-                updatedAt: new Date(),
-              })
-              .where(eq(chapters.id, chapterId));
+            if (content) {
+              await db
+                .update(chapters)
+                .set({
+                  content,
+                  wordCount: content.length,
+                  status: "draft",
+                  updatedAt: new Date(),
+                })
+                .where(eq(chapters.id, chapterId));
 
-            console.log(`[execute-step] Chapter ${chapterId} content updated (${content.length} chars) by ${step.agentType}`);
+              console.log(`[execute-step] Chapter ${chapterId} content updated (${content.length} chars) by ${step.agentType}`);
+            } else {
+              console.warn(`[execute-step] No extractable content from ${step.agentType}, skipping chapter update`);
+            }
           } catch (err) {
             console.error(`[execute-step] Failed to update chapter content for ${step.agentType}:`, err);
           }
