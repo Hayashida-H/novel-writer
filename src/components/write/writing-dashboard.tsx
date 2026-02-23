@@ -205,118 +205,96 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     }
   }, []);
 
-  // Per-episode writing via agent pipeline (SSE)
+  // Execute a single pipeline step via SSE, returns true on success
+  const executeStep = useCallback(async (chapterId: string, stepIndex: number): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/agents/execute-step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, chapterId, stepIndex }),
+      });
+
+      if (!res.ok) return false;
+      if (!res.body) return false;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let success = true;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "error") success = false;
+            if (event.type === "agent_start" || event.type === "agent_complete") {
+              await refreshTasks();
+            }
+          } catch { /* ignore */ }
+        }
+      }
+
+      return success;
+    } catch {
+      return false;
+    }
+  }, [projectId, refreshTasks]);
+
+  // Step-by-step pipeline execution
+  const executeStepByStep = useCallback(async (chapterId: string, startStep: number) => {
+    setWritingChapterId(chapterId);
+    try {
+      for (let i = startStep; i < AGENT_ORDER.length; i++) {
+        const ok = await executeStep(chapterId, i);
+        if (!ok) {
+          console.error(`Step ${i} (${AGENT_ORDER[i]}) failed`);
+          break;
+        }
+      }
+
+      // Final refresh
+      const [chapRes, taskRes] = await Promise.all([
+        fetch(`/api/chapters?projectId=${projectId}`),
+        fetch(`/api/agent-tasks?projectId=${projectId}`),
+      ]);
+      if (chapRes.ok) setChapters(await chapRes.json());
+      if (taskRes.ok) setTasks(await taskRes.json());
+    } catch (error) {
+      console.error("Step-by-step execution failed:", error);
+    } finally {
+      setWritingChapterId(null);
+    }
+  }, [projectId, executeStep, refreshTasks]);
+
+  // Start writing from scratch (all 7 steps)
   const handleWriteEpisode = useCallback(async (chapterId: string) => {
-    setWritingChapterId(chapterId);
-    try {
-      const res = await fetch("/api/agents/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, chapterId, mode: "write" }),
-      });
+    // Cancel stale tasks first
+    await fetch(`/api/agent-tasks?projectId=${projectId}`, { method: "DELETE" });
+    await executeStepByStep(chapterId, 0);
+  }, [projectId, executeStepByStep]);
 
-      if (!res.ok) {
-        alert("執筆の開始に失敗しました");
-        return;
-      }
-      if (!res.body) return;
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "agent_start" || event.type === "agent_complete") {
-              await refreshTasks();
-            } else if (event.type === "chapter_split") {
-              // Reload chapters after split
-              const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
-              if (chapRes.ok) setChapters(await chapRes.json());
-            } else if (event.type === "pipeline_complete") {
-              const [chapRes, taskRes] = await Promise.all([
-                fetch(`/api/chapters?projectId=${projectId}`),
-                fetch(`/api/agent-tasks?projectId=${projectId}`),
-              ]);
-              if (chapRes.ok) setChapters(await chapRes.json());
-              if (taskRes.ok) setTasks(await taskRes.json());
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch (error) {
-      console.error("Episode write failed:", error);
-    } finally {
-      setWritingChapterId(null);
-    }
-  }, [projectId, refreshTasks]);
-
-  // Resume episode from checkpoint (reuse completed agent outputs)
+  // Resume from first incomplete step
   const handleResumeEpisode = useCallback(async (chapterId: string) => {
-    setWritingChapterId(chapterId);
-    try {
-      const res = await fetch("/api/agents/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, chapterId, mode: "write", resume: true }),
-      });
-
-      if (!res.ok) {
-        alert("続きからの開始に失敗しました");
-        return;
+    const statuses = getAgentStatusesForChapter(chapterId, tasks);
+    let startStep = 0;
+    for (let i = 0; i < AGENT_ORDER.length; i++) {
+      if (statuses.get(AGENT_ORDER[i]) === "completed") {
+        startStep = i + 1;
+      } else {
+        break;
       }
-      if (!res.body) return;
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === "agent_start" || event.type === "agent_complete") {
-              await refreshTasks();
-            } else if (event.type === "chapter_split") {
-              const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
-              if (chapRes.ok) setChapters(await chapRes.json());
-            } else if (event.type === "pipeline_complete") {
-              const [chapRes, taskRes] = await Promise.all([
-                fetch(`/api/chapters?projectId=${projectId}`),
-                fetch(`/api/agent-tasks?projectId=${projectId}`),
-              ]);
-              if (chapRes.ok) setChapters(await chapRes.json());
-              if (taskRes.ok) setTasks(await taskRes.json());
-            }
-          } catch { /* ignore */ }
-        }
-      }
-    } catch (error) {
-      console.error("Episode resume failed:", error);
-    } finally {
-      setWritingChapterId(null);
     }
-  }, [projectId, refreshTasks]);
+    await executeStepByStep(chapterId, startStep);
+  }, [executeStepByStep, tasks]);
 
   const handleForceCancel = useCallback(async () => {
     try {
