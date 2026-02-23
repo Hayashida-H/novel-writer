@@ -11,7 +11,7 @@ import type { StreamEvent } from "@/types/agent";
 import type { PipelineStep } from "@/lib/agents/pipeline";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 600; // 10 min for multi-chapter writing
+export const maxDuration = 300; // 5 min (Vercel hobby plan limit)
 
 function buildWritingPipeline(chapterNumber: number): PipelineStep[] {
   return [
