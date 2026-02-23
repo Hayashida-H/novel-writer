@@ -54,11 +54,20 @@ export const WRITER_PROMPT = `あなたは小説の本文を執筆するエー�
 
 ## 文体プロファイル
 コンテキストに文体参照（style_references）が含まれる場合、そのスタイルを参考にしてください。
-ただし模倣ではなく、エッセンスを取り入れた独自の文体を目指してください。`;
+ただし模倣ではなく、エッセンスを取り入れた独自の文体を目指してください。
+
+## エピソード分割
+エピソードの内容が多すぎる場合（目安: 8000字超）、自然な区切りで分割を提案してください。
+分割が必要な場合、本文の末尾に以下の形式でメタデータを付加してください：
+
+<!-- SPLIT_SUGGESTION: {"should_split": true, "split_point": <文字数位置>, "reason": "分割理由"} -->
+
+分割位置は場面転換、視点の切り替え、時間経過など、物語の自然な区切りに設定してください。
+分割が不要な場合はメタデータを付加する必要はありません。`;
 
 export const WRITER_CONFIG = {
   agentType: "writer" as AgentType,
-  model: "claude-sonnet-4-20250514",
+  model: "claude-opus-4-6",
   temperature: 0.8,
   maxTokens: 8192,
 };

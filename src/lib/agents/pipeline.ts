@@ -167,6 +167,22 @@ export class AgentPipeline {
         results.push(result.output);
 
         onEvent?.({ type: "agent_complete", agentType: step.agentType, output: result.output });
+
+        // Check for consultation flag in output
+        if (result.rawContent.includes('"requires_consultation"') && result.rawContent.includes("true")) {
+          onEvent?.({
+            type: "consultation_required",
+            agentType: step.agentType,
+            message: result.rawContent,
+          } as unknown as StreamEvent);
+          // Pause pipeline for user to review
+          this._state = "paused";
+          await this.waitWhilePaused(onEvent);
+          if (this.isCancelled()) {
+            onEvent?.({ type: "error", message: "パイプラインがキャンセルされました" });
+            break;
+          }
+        }
       }
 
       if (this.state !== "cancelled") {

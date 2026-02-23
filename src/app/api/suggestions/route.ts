@@ -42,7 +42,7 @@ const SYSTEM_PROMPT = `あなたは創造的な小説プロット提案の専門
 三幕構成の場合のact値: "act1", "act2", "act3"
 英雄の旅の場合のact値: "departure", "initiation", "return"`;
 
-function buildUserMessage(genre?: string, preferences?: string, count = 3): string {
+function buildUserMessage(genre?: string, preferences?: string, homage?: string, count = 3): string {
   const parts = [`${count}つの小説プロット候補を提案してください。`];
 
   if (genre) {
@@ -53,6 +53,10 @@ function buildUserMessage(genre?: string, preferences?: string, count = 3): stri
 
   if (preferences) {
     parts.push(`ユーザーの好み・希望: ${preferences}`);
+  }
+
+  if (homage) {
+    parts.push(`オマージュ・参考にしたい作品や要素: ${homage}`);
   }
 
   parts.push("それぞれ異なるテイストの候補を提示してください。");
@@ -91,9 +95,9 @@ function parseJsonResponse(text: string): PlotCandidate[] {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { genre, preferences, count = 3 } = body;
+    const { genre, preferences, homage, count = 3 } = body;
 
-    const userMessage = buildUserMessage(genre, preferences, count);
+    const userMessage = buildUserMessage(genre, preferences, homage, count);
 
     const encoder = new TextEncoder();
     let fullResponse = "";

@@ -42,6 +42,9 @@ interface CharacterItem {
   backstory: string | null;
   goals: string | null;
   arcDescription: string | null;
+  affiliationMajor: string | null;
+  affiliationMiddle: string | null;
+  affiliationMinor: string | null;
 }
 
 const ROLE_LABELS: Record<string, { ja: string; icon: typeof User }> = {
@@ -176,7 +179,7 @@ export function CharacterList({ projectId }: CharacterListProps) {
           <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
             <div className="text-center text-muted-foreground">
               <User className="mx-auto mb-2 h-8 w-8 opacity-50" />
-              <p className="text-sm">キャラクターがまだいません</p>
+              <p className="text-sm">登場人物がまだいません</p>
             </div>
           </div>
         ) : (
@@ -238,6 +241,14 @@ export function CharacterList({ projectId }: CharacterListProps) {
                         </div>
                       )}
                     </div>
+                    {(char.affiliationMajor || char.affiliationMiddle || char.affiliationMinor) && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        <span className="font-medium">所属:</span>{" "}
+                        {[char.affiliationMajor, char.affiliationMiddle, char.affiliationMinor]
+                          .filter(Boolean)
+                          .join(" > ")}
+                      </p>
+                    )}
                   </CardContent>
                 </Card>
               );
@@ -249,7 +260,7 @@ export function CharacterList({ projectId }: CharacterListProps) {
       <Dialog open={!!editingChar} onOpenChange={(open) => !open && setEditingChar(null)}>
         <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{isNew ? "キャラクター追加" : "キャラクター編集"}</DialogTitle>
+            <DialogTitle>{isNew ? "登場人物を追加" : "登場人物を編集"}</DialogTitle>
           </DialogHeader>
 
           {editingChar && (
@@ -349,6 +360,33 @@ export function CharacterList({ projectId }: CharacterListProps) {
                   rows={2}
                   placeholder="物語を通しての変化・成長"
                 />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>所属・大区分</Label>
+                  <Input
+                    value={editingChar.affiliationMajor || ""}
+                    onChange={(e) => setEditingChar({ ...editingChar, affiliationMajor: e.target.value })}
+                    placeholder="王国軍"
+                  />
+                </div>
+                <div>
+                  <Label>所属・中区分</Label>
+                  <Input
+                    value={editingChar.affiliationMiddle || ""}
+                    onChange={(e) => setEditingChar({ ...editingChar, affiliationMiddle: e.target.value })}
+                    placeholder="第三騎士団"
+                  />
+                </div>
+                <div>
+                  <Label>所属・小区分</Label>
+                  <Input
+                    value={editingChar.affiliationMinor || ""}
+                    onChange={(e) => setEditingChar({ ...editingChar, affiliationMinor: e.target.value })}
+                    placeholder="偵察部隊"
+                  />
+                </div>
               </div>
             </div>
           )}

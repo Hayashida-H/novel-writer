@@ -9,6 +9,7 @@ import {
   foreshadowing,
   styleReferences,
   agentConfigs,
+  glossary,
 } from "@/lib/db/schema";
 import type { AgentType } from "@/types/agent";
 import type { AgentContext } from "./base-agent";
@@ -28,6 +29,7 @@ export interface ProjectContext {
     targetChapter: number | null;
   }[];
   styleReferences: { title: string; styleNotes: string | null; sampleText: string | null }[];
+  glossaryTerms: { term: string; reading: string | null; category: string | null; description: string }[];
 }
 
 export async function buildProjectContext(projectId: string): Promise<ProjectContext> {
@@ -40,6 +42,7 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
     projectChapters,
     projectForeshadowing,
     projectStyleRefs,
+    projectGlossary,
   ] = await Promise.all([
     db
       .select({
@@ -111,6 +114,16 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
           eq(styleReferences.isActive, true)
         )
       ),
+    db
+      .select({
+        term: glossary.term,
+        reading: glossary.reading,
+        category: glossary.category,
+        description: glossary.description,
+      })
+      .from(glossary)
+      .where(eq(glossary.projectId, projectId))
+      .orderBy(glossary.category, glossary.term),
   ]);
 
   return {
@@ -121,6 +134,7 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
     previousChapters: projectChapters,
     activeForeshadowing: projectForeshadowing,
     styleReferences: projectStyleRefs,
+    glossaryTerms: projectGlossary,
   };
 }
 
@@ -203,6 +217,13 @@ export function formatContextForPrompt(context: ProjectContext): string {
       )
       .join("\n");
     sections.push(`## これまでの章\n${chList}`);
+  }
+
+  if (context.glossaryTerms.length > 0) {
+    const glossaryList = context.glossaryTerms
+      .map((g) => `- **${g.term}**${g.reading ? `（${g.reading}）` : ""}${g.category ? ` [${g.category}]` : ""}: ${g.description}`)
+      .join("\n");
+    sections.push(`## 用語集\n${glossaryList}`);
   }
 
   if (context.styleReferences.length > 0) {

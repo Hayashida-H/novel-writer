@@ -43,6 +43,13 @@ import {
   type AnnotationType,
 } from "@/types/annotation";
 
+interface ArcItem {
+  id: string;
+  arcNumber: number;
+  title: string;
+  description: string | null;
+}
+
 interface ChapterItem {
   id: string;
   chapterNumber: number;
@@ -50,6 +57,8 @@ interface ChapterItem {
   content: string | null;
   wordCount: number | null;
   status: string;
+  arcId: string | null;
+  synopsis: string | null;
 }
 
 interface AnnotationItem {
@@ -93,6 +102,7 @@ interface ReviewHubProps {
 }
 
 export function ReviewHub({ projectId }: ReviewHubProps) {
+  const [arcs, setArcs] = useState<ArcItem[]>([]);
   const [chapters, setChapters] = useState<ChapterItem[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<ChapterItem | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
@@ -107,10 +117,14 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/chapters?projectId=${projectId}`);
-        if (res.ok) setChapters(await res.json());
+        const [arcsRes, chaptersRes] = await Promise.all([
+          fetch(`/api/arcs?projectId=${projectId}`),
+          fetch(`/api/chapters?projectId=${projectId}`),
+        ]);
+        if (arcsRes.ok) setArcs(await arcsRes.json());
+        if (chaptersRes.ok) setChapters(await chaptersRes.json());
       } catch (error) {
-        console.error("Failed to load chapters:", error);
+        console.error("Failed to load data:", error);
       }
     }
     load();
@@ -189,41 +203,97 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
   return (
     <>
       <div className="flex h-full gap-4">
-        {/* Chapter List Sidebar */}
-        <div className="w-64 shrink-0 space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">章を選択</h3>
+        {/* Episode List Sidebar */}
+        <div className="w-72 shrink-0 space-y-2 overflow-y-auto">
+          <h3 className="text-sm font-medium text-muted-foreground">話を選択</h3>
           {chapters.length === 0 ? (
-            <p className="text-xs text-muted-foreground">章がまだありません</p>
+            <p className="text-xs text-muted-foreground">話がまだありません</p>
           ) : (
-            chapters.map((chapter) => (
-              <Card
-                key={chapter.id}
-                className={`cursor-pointer transition-colors hover:bg-accent/50 ${
-                  selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
-                }`}
-                onClick={() => setSelectedChapter(chapter)}
-              >
-                <CardHeader className="py-3">
-                  <CardTitle className="text-xs">
-                    第{chapter.chapterNumber}章: {chapter.title || "無題"}
-                  </CardTitle>
-                  <CardDescription className="flex items-center gap-2 text-xs">
-                    <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
-                    {chapter.content && (
-                      <a
-                        href={`/p/${projectId}/review/chapters/${chapter.id}`}
-                        className="inline-flex items-center gap-0.5 text-primary hover:underline"
-                        onClick={(e) => e.stopPropagation()}
-                        title="モバイルリーダーで開く"
+            <>
+              {arcs
+                .sort((a, b) => a.arcNumber - b.arcNumber)
+                .map((arc) => {
+                  const arcChapters = chapters.filter((c) => c.arcId === arc.id);
+                  if (arcChapters.length === 0) return null;
+                  return (
+                    <div key={arc.id} className="space-y-1">
+                      <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
+                        第{arc.arcNumber}章: {arc.title}
+                      </h4>
+                      {arcChapters.map((chapter) => (
+                        <Card
+                          key={chapter.id}
+                          className={`cursor-pointer transition-colors hover:bg-accent/50 ${
+                            selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
+                          }`}
+                          onClick={() => setSelectedChapter(chapter)}
+                        >
+                          <CardHeader className="py-2 px-3">
+                            <CardTitle className="text-xs">
+                              第{chapter.chapterNumber}話: {chapter.title || "無題"}
+                            </CardTitle>
+                            <CardDescription className="flex items-center gap-2 text-xs">
+                              <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
+                              {chapter.content && (
+                                <a
+                                  href={`/p/${projectId}/review/chapters/${chapter.id}`}
+                                  className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title="モバイルリーダーで開く"
+                                >
+                                  <Smartphone className="h-3 w-3" />
+                                  読む
+                                </a>
+                              )}
+                            </CardDescription>
+                          </CardHeader>
+                        </Card>
+                      ))}
+                    </div>
+                  );
+                })}
+              {/* Chapters without arc */}
+              {chapters.filter((c) => !c.arcId || !arcs.find((a) => a.id === c.arcId)).length > 0 && (
+                <div className="space-y-1">
+                  {arcs.length > 0 && (
+                    <h4 className="text-xs font-semibold text-muted-foreground px-1 pt-1">
+                      未分類
+                    </h4>
+                  )}
+                  {chapters
+                    .filter((c) => !c.arcId || !arcs.find((a) => a.id === c.arcId))
+                    .map((chapter) => (
+                      <Card
+                        key={chapter.id}
+                        className={`cursor-pointer transition-colors hover:bg-accent/50 ${
+                          selectedChapter?.id === chapter.id ? "border-primary bg-accent/30" : ""
+                        }`}
+                        onClick={() => setSelectedChapter(chapter)}
                       >
-                        <Smartphone className="h-3 w-3" />
-                        読む
-                      </a>
-                    )}
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            ))
+                        <CardHeader className="py-2 px-3">
+                          <CardTitle className="text-xs">
+                            第{chapter.chapterNumber}話: {chapter.title || "無題"}
+                          </CardTitle>
+                          <CardDescription className="flex items-center gap-2 text-xs">
+                            <span>{(chapter.wordCount || 0).toLocaleString()}字</span>
+                            {chapter.content && (
+                              <a
+                                href={`/p/${projectId}/review/chapters/${chapter.id}`}
+                                className="inline-flex items-center gap-0.5 text-primary hover:underline"
+                                onClick={(e) => e.stopPropagation()}
+                                title="モバイルリーダーで開く"
+                              >
+                                <Smartphone className="h-3 w-3" />
+                                読む
+                              </a>
+                            )}
+                          </CardDescription>
+                        </CardHeader>
+                      </Card>
+                    ))}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -233,7 +303,7 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
             <div className="flex h-full items-center justify-center">
               <div className="text-center text-muted-foreground">
                 <BookOpen className="mx-auto mb-2 h-8 w-8 opacity-50" />
-                <p className="text-sm">レビューする章を選択してください</p>
+                <p className="text-sm">レビューする話を選択してください</p>
               </div>
             </div>
           ) : (
@@ -241,7 +311,7 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
               {/* Header */}
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold">
-                  第{selectedChapter.chapterNumber}章: {selectedChapter.title || "無題"}
+                  第{selectedChapter.chapterNumber}話: {selectedChapter.title || "無題"}
                 </h2>
                 <Button size="sm" onClick={() => setShowAnnotationDialog(true)}>
                   <Plus className="mr-1.5 h-3.5 w-3.5" />

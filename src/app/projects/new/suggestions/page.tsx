@@ -22,6 +22,7 @@ export default function SuggestionsPage() {
   const router = useRouter();
   const [genre, setGenre] = useState<string>("");
   const [preferences, setPreferences] = useState("");
+  const [homage, setHomage] = useState("");
   const [candidates, setCandidates] = useState<PlotCandidate[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export default function SuggestionsPage() {
         body: JSON.stringify({
           genre: genre || undefined,
           preferences: preferences || undefined,
+          homage: homage || undefined,
           count: 3,
         }),
       });
@@ -77,7 +79,7 @@ export default function SuggestionsPage() {
     } finally {
       setIsGenerating(false);
     }
-  }, [genre, preferences]);
+  }, [genre, preferences, homage]);
 
   function handleSelect(candidate: PlotCandidate) {
     sessionStorage.setItem("plot-suggestion", JSON.stringify(candidate));
@@ -125,6 +127,16 @@ export default function SuggestionsPage() {
                   rows={2}
                 />
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>オマージュしたい逸話・歴史・物語・武器（任意）</Label>
+              <Textarea
+                value={homage}
+                onChange={(e) => setHomage(e.target.value)}
+                placeholder="例：三国志の赤壁の戦い、アーサー王伝説、エクスカリバーなど"
+                rows={2}
+              />
             </div>
 
             <div className="flex gap-3">

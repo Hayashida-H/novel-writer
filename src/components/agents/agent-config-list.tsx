@@ -27,8 +27,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bot, Settings, RotateCcw, Save } from "lucide-react";
+import { Bot, Settings, Save } from "lucide-react";
 import { AGENT_LABELS, type AgentType } from "@/types/agent";
+
+const MODEL_DISPLAY_NAMES: Record<string, string> = {
+  "claude-opus-4-6": "Opus 4.6",
+  "claude-sonnet-4-20250514": "Sonnet 4",
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
+};
 
 interface AgentConfigItem {
   id: string | null;
@@ -151,7 +157,7 @@ export function AgentConfigList({ projectId }: AgentConfigListProps) {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>モデル: {config.model}</span>
+                    <span>モデル: {MODEL_DISPLAY_NAMES[config.model] || config.model}</span>
                     <span>温度: {config.temperature}</span>
                   </div>
                   <Button
@@ -193,6 +199,7 @@ export function AgentConfigList({ projectId }: AgentConfigListProps) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="claude-opus-4-6">Claude Opus 4.6</SelectItem>
                       <SelectItem value="claude-sonnet-4-20250514">Claude Sonnet 4</SelectItem>
                       <SelectItem value="claude-haiku-4-5-20251001">Claude Haiku 4.5</SelectItem>
                     </SelectContent>

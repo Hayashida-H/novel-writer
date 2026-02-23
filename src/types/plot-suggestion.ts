@@ -19,5 +19,6 @@ export interface PlotPointSuggestion {
 export interface SuggestionRequest {
   genre?: string;
   preferences?: string;
+  homage?: string;
   count?: number;
 }

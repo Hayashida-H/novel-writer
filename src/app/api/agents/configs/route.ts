@@ -14,14 +14,21 @@ export async function GET(req: NextRequest) {
     }
 
     const db = getDb();
-    const configs = await db
+    const savedConfigs = await db
       .select()
       .from(agentConfigs)
       .where(eq(agentConfigs.projectId, projectId));
 
-    // If no configs exist yet, return defaults
-    if (configs.length === 0) {
-      const defaults = getAllDefaultConfigs().map((d) => ({
+    const defaults = getAllDefaultConfigs();
+    const savedMap = new Map(savedConfigs.map((c) => [c.agentType, c]));
+
+    // Merge saved configs with defaults for any missing agent types
+    const merged = defaults.map((d) => {
+      const saved = savedMap.get(d.agentType);
+      if (saved) {
+        return { ...saved, isDefault: false };
+      }
+      return {
         id: null,
         projectId,
         agentType: d.agentType,
@@ -33,11 +40,10 @@ export async function GET(req: NextRequest) {
         styleProfile: null,
         isActive: true,
         isDefault: true,
-      }));
-      return NextResponse.json(defaults);
-    }
+      };
+    });
 
-    return NextResponse.json(configs.map((c) => ({ ...c, isDefault: false })));
+    return NextResponse.json(merged);
   } catch (error) {
     console.error("Failed to fetch agent configs:", error);
     return NextResponse.json({ error: "Failed to fetch agent configs" }, { status: 500 });

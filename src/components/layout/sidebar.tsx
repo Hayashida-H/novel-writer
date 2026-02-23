@@ -14,6 +14,9 @@ import {
   Bot,
   Download,
   ChevronLeft,
+  BookText,
+  ListTree,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,9 +34,17 @@ const navItems = [
     items: [
       { href: "prepare/chat", label: "チャット", icon: MessageSquare },
       { href: "prepare/plot", label: "プロット", icon: Map },
-      { href: "prepare/characters", label: "キャラクター", icon: Users },
+      { href: "prepare/characters", label: "登場人物", icon: Users },
       { href: "prepare/world", label: "世界観", icon: Globe },
       { href: "prepare/foreshadowing", label: "伏線管理", icon: GitBranch },
+      { href: "prepare/glossary", label: "用語集", icon: BookText },
+      { href: "prepare/structure", label: "構成", icon: ListTree },
+    ],
+  },
+  {
+    group: "チェック",
+    items: [
+      { href: "prepare/consistency", label: "整合性チェック", icon: ShieldCheck },
     ],
   },
   {

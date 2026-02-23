@@ -6,6 +6,7 @@ import { getClaudeClient } from "@/lib/claude/client";
 import { createSSEStream } from "@/lib/claude/streaming";
 import { AgentPipeline } from "@/lib/agents/pipeline";
 import { generateChapterSummary } from "@/lib/agents/summary";
+import { extractContentFromCheck } from "@/lib/agents/content-extractor";
 import type { StreamEvent } from "@/types/agent";
 import type { PipelineStep } from "@/lib/agents/pipeline";
 
@@ -241,15 +242,107 @@ export async function POST(req: NextRequest) {
         const finalContent = editorResult?.content || writerResult?.content;
 
         if (finalContent && chapterId) {
+          // Extract split suggestion if present
+          const splitMatch = finalContent.match(/<!-- SPLIT_SUGGESTION:\s*(\{[\s\S]*?\})\s*-->/);
+          const cleanContent = finalContent.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim();
+
           await db
             .update(chapters)
             .set({
-              content: finalContent,
-              wordCount: finalContent.length,
+              content: cleanContent,
+              wordCount: cleanContent.length,
               status: "draft",
               updatedAt: new Date(),
             })
             .where(eq(chapters.id, chapterId));
+
+          // Handle split suggestion
+          if (splitMatch) {
+            try {
+              const splitData = JSON.parse(splitMatch[1]);
+              if (splitData.should_split && splitData.split_point > 0 && cleanContent.length > 6000) {
+                const splitPoint = Math.min(splitData.split_point, cleanContent.length - 500);
+
+                // Find a natural break point near the split position
+                let actualSplit = splitPoint;
+                const searchRange = cleanContent.slice(Math.max(0, splitPoint - 200), Math.min(cleanContent.length, splitPoint + 200));
+                const breakMatch = searchRange.match(/\n\n/);
+                if (breakMatch && breakMatch.index !== undefined) {
+                  actualSplit = Math.max(0, splitPoint - 200) + breakMatch.index + 2;
+                }
+
+                const firstPart = cleanContent.slice(0, actualSplit).trim();
+                const secondPart = cleanContent.slice(actualSplit).trim();
+
+                if (firstPart.length > 500 && secondPart.length > 500) {
+                  // Update current chapter with first part
+                  const [currentChapter] = await db
+                    .select()
+                    .from(chapters)
+                    .where(eq(chapters.id, chapterId))
+                    .limit(1);
+
+                  await db
+                    .update(chapters)
+                    .set({
+                      content: firstPart,
+                      wordCount: firstPart.length,
+                    })
+                    .where(eq(chapters.id, chapterId));
+
+                  if (currentChapter) {
+                    // Shift subsequent chapters' numbers
+                    const subsequentChapters = await db
+                      .select()
+                      .from(chapters)
+                      .where(eq(chapters.projectId, projectId));
+
+                    const toShift = subsequentChapters
+                      .filter((c) => c.chapterNumber > currentChapter.chapterNumber)
+                      .sort((a, b) => b.chapterNumber - a.chapterNumber);
+
+                    for (const ch of toShift) {
+                      await db
+                        .update(chapters)
+                        .set({ chapterNumber: ch.chapterNumber + 1 })
+                        .where(eq(chapters.id, ch.id));
+                    }
+
+                    // Create new chapter with second part
+                    const [newChapter] = await db
+                      .insert(chapters)
+                      .values({
+                        projectId,
+                        arcId: currentChapter.arcId,
+                        chapterNumber: currentChapter.chapterNumber + 1,
+                        title: currentChapter.title ? `${currentChapter.title}（後編）` : null,
+                        content: secondPart,
+                        wordCount: secondPart.length,
+                        status: "draft",
+                      })
+                      .returning();
+
+                    // Update original title
+                    if (currentChapter.title) {
+                      await db
+                        .update(chapters)
+                        .set({ title: `${currentChapter.title}（前編）` })
+                        .where(eq(chapters.id, chapterId));
+                    }
+
+                    send({
+                      type: "chapter_split",
+                      originalId: chapterId,
+                      newChapterId: newChapter.id,
+                      reason: splitData.reason,
+                    } as unknown as StreamEvent);
+                  }
+                }
+              }
+            } catch (err) {
+              console.error("Failed to handle split suggestion:", err);
+            }
+          }
 
           // Auto-generate chapter summary
           try {
@@ -257,6 +350,23 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("Failed to generate chapter summary:", err);
             // Non-fatal: don't fail the pipeline for summary generation
+          }
+        }
+
+        // Auto-extract new characters/world settings from continuity checker
+        const continuityResult = results.find((r) => r.agentType === "continuity_checker");
+        if (continuityResult?.content) {
+          try {
+            const extracted = await extractContentFromCheck(projectId, continuityResult.content);
+            if (extracted.newCharacters > 0 || extracted.newWorldSettings > 0) {
+              send({
+                type: "content_extracted",
+                newCharacters: extracted.newCharacters,
+                newWorldSettings: extracted.newWorldSettings,
+              } as unknown as StreamEvent);
+            }
+          } catch (err) {
+            console.error("Failed to extract content from continuity check:", err);
           }
         }
 

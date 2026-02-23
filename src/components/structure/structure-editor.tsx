@@ -1,0 +1,638 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Plus,
+  FileText,
+  Loader2,
+  Pencil,
+  Sparkles,
+  Trash2,
+  ChevronDown,
+  ChevronRight,
+  FolderPlus,
+} from "lucide-react";
+
+interface ArcItem {
+  id: string;
+  projectId: string;
+  arcNumber: number;
+  title: string;
+  description: string | null;
+}
+
+interface ChapterItem {
+  id: string;
+  chapterNumber: number;
+  title: string | null;
+  synopsis: string | null;
+  wordCount: number | null;
+  status: string;
+  arcId: string | null;
+}
+
+interface StructureEditorProps {
+  projectId: string;
+}
+
+export function StructureEditor({ projectId }: StructureEditorProps) {
+  const [chapters, setChapters] = useState<ChapterItem[]>([]);
+  const [arcs, setArcs] = useState<ArcItem[]>([]);
+  const [showNewChapter, setShowNewChapter] = useState(false);
+  const [newChapter, setNewChapter] = useState({ title: "", synopsis: "", arcId: "" });
+  const [showNewArc, setShowNewArc] = useState(false);
+  const [newArc, setNewArc] = useState({ title: "", description: "" });
+  const [editingArc, setEditingArc] = useState<ArcItem | null>(null);
+  const [editingChapter, setEditingChapter] = useState<ChapterItem | null>(null);
+  const [collapsedArcs, setCollapsedArcs] = useState<Set<string>>(new Set());
+  const [isCreatingChapters, setIsCreatingChapters] = useState(false);
+  const [generatingArcId, setGeneratingArcId] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [chapRes, arcRes] = await Promise.all([
+          fetch(`/api/chapters?projectId=${projectId}`),
+          fetch(`/api/arcs?projectId=${projectId}`),
+        ]);
+        if (chapRes.ok) setChapters(await chapRes.json());
+        if (arcRes.ok) setArcs(await arcRes.json());
+      } catch (error) {
+        console.error("Failed to load:", error);
+      }
+    }
+    load();
+  }, [projectId]);
+
+  const handleCreateChapter = useCallback(async () => {
+    if (!newChapter.title) return;
+    try {
+      const nextNumber = chapters.length > 0
+        ? Math.max(...chapters.map((c) => c.chapterNumber)) + 1
+        : 1;
+      const res = await fetch("/api/chapters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          chapterNumber: nextNumber,
+          title: newChapter.title,
+          synopsis: newChapter.synopsis || null,
+          arcId: newChapter.arcId || null,
+        }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setChapters((prev) => [...prev, created]);
+        setNewChapter({ title: "", synopsis: "", arcId: "" });
+        setShowNewChapter(false);
+      }
+    } catch (error) {
+      console.error("Failed to create chapter:", error);
+    }
+  }, [newChapter, chapters, projectId]);
+
+  const handleCreateArc = useCallback(async () => {
+    if (!newArc.title) return;
+    try {
+      const res = await fetch("/api/arcs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, title: newArc.title, description: newArc.description || null }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setArcs((prev) => [...prev, created]);
+        setNewArc({ title: "", description: "" });
+        setShowNewArc(false);
+      }
+    } catch (error) {
+      console.error("Failed to create arc:", error);
+    }
+  }, [newArc, projectId]);
+
+  const handleUpdateArc = useCallback(async () => {
+    if (!editingArc) return;
+    try {
+      const res = await fetch("/api/arcs", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editingArc.id, title: editingArc.title, description: editingArc.description }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setArcs((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+        setEditingArc(null);
+      }
+    } catch (error) {
+      console.error("Failed to update arc:", error);
+    }
+  }, [editingArc]);
+
+  const handleDeleteArc = useCallback(async (arcId: string) => {
+    try {
+      const res = await fetch(`/api/arcs?id=${arcId}`, { method: "DELETE" });
+      if (res.ok) {
+        setArcs((prev) => prev.filter((a) => a.id !== arcId));
+        setChapters((prev) => prev.map((c) => c.arcId === arcId ? { ...c, arcId: null } : c));
+      }
+    } catch (error) {
+      console.error("Failed to delete arc:", error);
+    }
+  }, []);
+
+  const handleDeleteChapter = useCallback(async (chapterId: string) => {
+    try {
+      const res = await fetch(`/api/chapters?id=${chapterId}`, { method: "DELETE" });
+      if (res.ok) {
+        setChapters((prev) => prev.filter((c) => c.id !== chapterId));
+      }
+    } catch (error) {
+      console.error("Failed to delete chapter:", error);
+    }
+  }, []);
+
+  const handleUpdateChapter = useCallback(async () => {
+    if (!editingChapter) return;
+    try {
+      const res = await fetch("/api/chapters", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingChapter.id,
+          title: editingChapter.title,
+          synopsis: editingChapter.synopsis,
+          arcId: editingChapter.arcId || null,
+        }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setChapters((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)));
+        setEditingChapter(null);
+      }
+    } catch (error) {
+      console.error("Failed to update chapter:", error);
+    }
+  }, [editingChapter]);
+
+  const toggleArcCollapse = useCallback((arcId: string) => {
+    setCollapsedArcs((prev) => {
+      const next = new Set(prev);
+      if (next.has(arcId)) next.delete(arcId);
+      else next.add(arcId);
+      return next;
+    });
+  }, []);
+
+  // AI arc generation from plot (SSE)
+  const handleCreateChaptersFromPlot = useCallback(async () => {
+    setIsCreatingChapters(true);
+    try {
+      const res = await fetch("/api/generate/chapters-from-plot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        alert(err.error || "章の生成に失敗しました");
+        return;
+      }
+      if (!res.body) return;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "done" && event.items) {
+              setArcs((prev) => [...prev, ...event.items]);
+            } else if (event.type === "error") {
+              alert(event.message || "章の生成に失敗しました");
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to create chapters from plot:", error);
+    } finally {
+      setIsCreatingChapters(false);
+    }
+  }, [projectId]);
+
+  // Episode generation per arc (SSE)
+  const handleGenerateEpisodes = useCallback(async (arcId: string) => {
+    setGeneratingArcId(arcId);
+    try {
+      const res = await fetch("/api/generate/episodes-from-arc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, arcId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Unknown error" }));
+        alert(err.error || "話の生成に失敗しました");
+        return;
+      }
+      if (!res.body) return;
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "done" && event.items) {
+              setChapters((prev) => [...prev, ...event.items]);
+            } else if (event.type === "error") {
+              alert(event.message || "話の生成に失敗しました");
+            }
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (error) {
+      console.error("Failed to generate episodes:", error);
+    } finally {
+      setGeneratingArcId(null);
+    }
+  }, [projectId]);
+
+  const totalWords = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+
+  const STATUS_LABELS: Record<string, string> = {
+    outlined: "アウトライン",
+    drafting: "下書き中",
+    draft: "下書き",
+    editing: "編集中",
+    reviewed: "レビュー済",
+    final: "最終版",
+  };
+
+  const renderChapterRow = (chapter: ChapterItem) => (
+    <div key={chapter.id} className="rounded-lg border px-3 py-2">
+      <div className="flex items-center gap-3">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold">
+          {chapter.chapterNumber}
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">{chapter.title || `第${chapter.chapterNumber}話`}</p>
+        </div>
+        <span className="shrink-0 text-xs text-muted-foreground">{(chapter.wordCount || 0).toLocaleString()}字</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{STATUS_LABELS[chapter.status] || chapter.status}</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0"
+          onClick={() => setEditingChapter(chapter)}
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 shrink-0 text-destructive"
+          onClick={() => handleDeleteChapter(chapter.id)}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+      {chapter.synopsis && (
+        <p className="mt-1 ml-9 text-xs text-muted-foreground whitespace-pre-wrap">{chapter.synopsis}</p>
+      )}
+    </div>
+  );
+
+  return (
+    <>
+      <div className="space-y-6">
+        {/* Stats */}
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-4">
+              <div className="text-2xl font-bold">{arcs.length}</div>
+              <p className="text-xs text-muted-foreground">章</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="text-2xl font-bold">{chapters.length}</div>
+              <p className="text-xs text-muted-foreground">話</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4">
+              <div className="text-2xl font-bold">{totalWords.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">総文字数</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setShowNewArc(true)}>
+            <FolderPlus className="mr-1.5 h-3.5 w-3.5" />
+            章を追加
+          </Button>
+          <Button size="sm" onClick={() => setShowNewChapter(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            話を追加
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCreateChaptersFromPlot}
+            disabled={isCreatingChapters}
+          >
+            {isCreatingChapters ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isCreatingChapters ? "AI生成中..." : "プロットから章を作成"}
+          </Button>
+        </div>
+
+        {/* Structure List */}
+        <div>
+          <h3 className="mb-3 text-sm font-medium">
+            {arcs.length > 0 ? "章 / 話一覧" : "話一覧"}
+          </h3>
+          {chapters.length === 0 && arcs.length === 0 ? (
+            <div className="flex items-center justify-center rounded-lg border border-dashed py-12">
+              <div className="text-center text-muted-foreground">
+                <FileText className="mx-auto mb-2 h-8 w-8 opacity-50" />
+                <p className="text-sm">まだ話がありません</p>
+                <p className="mt-1 text-xs">「プロットから章を作成」で始めましょう</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {arcs.map((arc) => {
+                const arcChapters = chapters.filter((c) => c.arcId === arc.id);
+                const isCollapsed = collapsedArcs.has(arc.id);
+                const arcWords = arcChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+                const isGenerating = generatingArcId === arc.id;
+                return (
+                  <div key={arc.id}>
+                    <div
+                      className="rounded-lg border bg-muted/50 px-3 py-2 cursor-pointer"
+                      onClick={() => toggleArcCollapse(arc.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {isCollapsed ? (
+                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="text-sm font-semibold">
+                          第{arc.arcNumber}章: {arc.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          ({arcChapters.length}話 / {arcWords.toLocaleString()}字)
+                        </span>
+                        <div className="ml-auto flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={isGenerating || !!generatingArcId}
+                          onClick={(e) => { e.stopPropagation(); handleGenerateEpisodes(arc.id); }}
+                          title="話を生成"
+                        >
+                          {isGenerating ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3 w-3" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => { e.stopPropagation(); setEditingArc(arc); }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-destructive"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteArc(arc.id); }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      </div>
+                      {arc.description && (
+                        <p className="mt-1 ml-6 text-xs text-muted-foreground whitespace-pre-wrap">{arc.description}</p>
+                      )}
+                    </div>
+                    {!isCollapsed && (
+                      <div className="ml-4 mt-1 space-y-1">
+                        {arcChapters.length === 0 ? (
+                          <p className="py-2 text-xs text-muted-foreground">
+                            話なし — Sparkles ボタンで話を生成
+                          </p>
+                        ) : (
+                          arcChapters.map((chapter) => renderChapterRow(chapter))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {/* Unassigned chapters */}
+              {(() => {
+                const unassigned = chapters.filter((c) => !c.arcId);
+                if (unassigned.length === 0) return null;
+                return (
+                  <div>
+                    {arcs.length > 0 && (
+                      <div className="flex items-center gap-2 rounded-lg border border-dashed bg-muted/30 px-3 py-2">
+                        <span className="text-sm font-medium text-muted-foreground">未分類</span>
+                        <span className="text-xs text-muted-foreground">({unassigned.length}話)</span>
+                      </div>
+                    )}
+                    <div className={arcs.length > 0 ? "ml-4 mt-1 space-y-1" : "space-y-2"}>
+                      {unassigned.map((chapter) => renderChapterRow(chapter))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Dialogs */}
+      <Dialog open={showNewChapter} onOpenChange={setShowNewChapter}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>話を追加</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>タイトル</Label>
+              <Input value={newChapter.title} onChange={(e) => setNewChapter({ ...newChapter, title: e.target.value })} placeholder="出発の朝" />
+            </div>
+            <div>
+              <Label>あらすじ</Label>
+              <Textarea value={newChapter.synopsis} onChange={(e) => setNewChapter({ ...newChapter, synopsis: e.target.value })} rows={3} placeholder="この話で起こる出来事..." />
+            </div>
+            {arcs.length > 0 && (
+              <div>
+                <Label>所属する章（任意）</Label>
+                <Select value={newChapter.arcId || "__none__"} onValueChange={(v) => setNewChapter({ ...newChapter, arcId: v === "__none__" ? "" : v })}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="未分類" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">未分類</SelectItem>
+                    {arcs.map((a) => (
+                      <SelectItem key={a.id} value={a.id}>第{a.arcNumber}章: {a.title}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewChapter(false)}>キャンセル</Button>
+            <Button onClick={handleCreateChapter} disabled={!newChapter.title}>追加</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNewArc} onOpenChange={setShowNewArc}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>章を追加</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>章タイトル</Label>
+              <Input value={newArc.title} onChange={(e) => setNewArc({ ...newArc, title: e.target.value })} placeholder="冒険の始まり" />
+            </div>
+            <div>
+              <Label>概要（任意）</Label>
+              <Textarea value={newArc.description} onChange={(e) => setNewArc({ ...newArc, description: e.target.value })} rows={2} placeholder="この章の概要..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNewArc(false)}>キャンセル</Button>
+            <Button onClick={handleCreateArc} disabled={!newArc.title}>追加</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingArc} onOpenChange={(open) => !open && setEditingArc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>章を編集</DialogTitle></DialogHeader>
+          {editingArc && (
+            <div className="space-y-4">
+              <div>
+                <Label>章タイトル</Label>
+                <Input value={editingArc.title} onChange={(e) => setEditingArc({ ...editingArc, title: e.target.value })} />
+              </div>
+              <div>
+                <Label>概要</Label>
+                <Textarea value={editingArc.description || ""} onChange={(e) => setEditingArc({ ...editingArc, description: e.target.value })} rows={2} />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingArc(null)}>キャンセル</Button>
+            <Button onClick={handleUpdateArc} disabled={!editingArc?.title}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editingChapter} onOpenChange={(open) => !open && setEditingChapter(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader><DialogTitle>話を編集</DialogTitle></DialogHeader>
+          {editingChapter && (
+            <div className="space-y-4">
+              <div>
+                <Label>タイトル</Label>
+                <Input
+                  value={editingChapter.title || ""}
+                  onChange={(e) => setEditingChapter({ ...editingChapter, title: e.target.value })}
+                  placeholder="話のタイトル"
+                />
+              </div>
+              <div>
+                <Label>あらすじ</Label>
+                <Textarea
+                  value={editingChapter.synopsis || ""}
+                  onChange={(e) => setEditingChapter({ ...editingChapter, synopsis: e.target.value })}
+                  rows={6}
+                  placeholder="この話で起こる出来事..."
+                />
+              </div>
+              {arcs.length > 0 && (
+                <div>
+                  <Label>所属する章</Label>
+                  <Select
+                    value={editingChapter.arcId || "__none__"}
+                    onValueChange={(v) => setEditingChapter({ ...editingChapter, arcId: v === "__none__" ? null : v })}
+                  >
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">未分類</SelectItem>
+                      {arcs.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>第{a.arcNumber}章: {a.title}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingChapter(null)}>キャンセル</Button>
+            <Button onClick={handleUpdateChapter}>保存</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

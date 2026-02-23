@@ -15,6 +15,7 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [reflections, setReflections] = useState<{ target: string; action: string }[]>([]);
 
   // Load sessions
   useEffect(() => {
@@ -123,15 +124,24 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
 
               if (event.type === "stream") {
                 accumulated += event.text;
-                setStreamingContent(accumulated);
+                // Strip REFLECT tags from displayed content
+                const displayText = accumulated.replace(/<!-- REFLECT:[\s\S]*?-->/g, "").trim();
+                setStreamingContent(displayText);
+              } else if (event.type === "reflect") {
+                // Show reflection badges
+                if (event.applied && Array.isArray(event.applied)) {
+                  setReflections(event.applied);
+                  setTimeout(() => setReflections([]), 5000);
+                }
               } else if (event.type === "done") {
-                // Add final assistant message
+                // Add final assistant message (clean text)
+                const cleanContent = accumulated.replace(/<!-- REFLECT:[\s\S]*?-->/g, "").trim();
                 setMessages((prev) => [
                   ...prev,
                   {
                     id: `assistant-${Date.now()}`,
                     role: "assistant",
-                    content: accumulated,
+                    content: cleanContent,
                   },
                 ]);
                 setStreamingContent("");
@@ -173,6 +183,18 @@ export function ChatContainer({ projectId }: ChatContainerProps) {
         {activeSessionId ? (
           <>
             <ChatMessages messages={messages} streamingContent={streamingContent || undefined} />
+            {reflections.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 border-t bg-muted/30 px-4 py-2">
+                {reflections.map((r, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-200"
+                  >
+                    {r.target}: {r.action}
+                  </span>
+                ))}
+              </div>
+            )}
             <ChatInput onSend={sendMessage} disabled={isLoading} />
           </>
         ) : (

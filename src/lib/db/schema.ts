@@ -99,6 +99,9 @@ export const characters = pgTable(
     backstory: text("backstory"),
     goals: text("goals"),
     arcDescription: text("arc_description"),
+    affiliationMajor: text("affiliation_major"),
+    affiliationMiddle: text("affiliation_middle"),
+    affiliationMinor: text("affiliation_minor"),
     metadata: jsonb("metadata").default({}).$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -445,4 +448,27 @@ export const styleReferences = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_style_references_project").on(table.projectId)]
+);
+
+// ============================================================
+// GLOSSARY (用語集)
+// ============================================================
+
+export const glossary = pgTable(
+  "glossary",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    term: text("term").notNull(),
+    reading: text("reading"),
+    category: text("category"),
+    description: text("description").notNull(),
+    relatedCharacterIds: jsonb("related_character_ids").default([]).$type<string[]>(),
+    sortOrder: integer("sort_order").default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_glossary_project").on(table.projectId, table.category)]
 );

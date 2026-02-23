@@ -15,34 +15,47 @@ export interface DefaultAgentConfig {
   maxTokens: number;
 }
 
+// Shared consultation rules appended to all agent prompts
+const CONSULTATION_RULES = `
+
+## 変更ルール
+- 既存の設定（登場人物、世界観、プロット）を変更する場合は、変更理由を明記すること
+- 大幅な変更（登場人物の死亡、設定の根本的変更、プロットの大きな方向転換）は出力に \`"requires_consultation": true\` フラグを付け、変更内容と理由を記載すること
+- 軽微な修正（誤字、表現改善、補足説明の追加）は自動適用可
+- 新規の登場人物や世界設定を追加する場合は、既存設定との整合性を必ず確認すること`;
+
+function withConsultation(prompt: string): string {
+  return prompt + CONSULTATION_RULES;
+}
+
 const DEFAULT_CONFIGS: Record<AgentType, DefaultAgentConfig> = {
   coordinator: {
     ...COORDINATOR_CONFIG,
-    systemPrompt: COORDINATOR_PROMPT,
+    systemPrompt: withConsultation(COORDINATOR_PROMPT),
   },
   plot_architect: {
     ...PLOT_ARCHITECT_CONFIG,
-    systemPrompt: PLOT_ARCHITECT_PROMPT,
+    systemPrompt: withConsultation(PLOT_ARCHITECT_PROMPT),
   },
   character_manager: {
     ...CHARACTER_MANAGER_CONFIG,
-    systemPrompt: CHARACTER_MANAGER_PROMPT,
+    systemPrompt: withConsultation(CHARACTER_MANAGER_PROMPT),
   },
   writer: {
     ...WRITER_CONFIG,
-    systemPrompt: WRITER_PROMPT,
+    systemPrompt: withConsultation(WRITER_PROMPT),
   },
   editor: {
     ...EDITOR_CONFIG,
-    systemPrompt: EDITOR_PROMPT,
+    systemPrompt: withConsultation(EDITOR_PROMPT),
   },
   world_builder: {
     ...WORLD_BUILDER_CONFIG,
-    systemPrompt: WORLD_BUILDER_PROMPT,
+    systemPrompt: withConsultation(WORLD_BUILDER_PROMPT),
   },
   continuity_checker: {
     ...CONTINUITY_CHECKER_CONFIG,
-    systemPrompt: CONTINUITY_CHECKER_PROMPT,
+    systemPrompt: withConsultation(CONTINUITY_CHECKER_PROMPT),
   },
 };
 
