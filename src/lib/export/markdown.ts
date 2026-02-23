@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { projects, chapters } from "@/lib/db/schema";
 
@@ -13,6 +13,7 @@ export async function exportProjectAsMarkdown(
 ): Promise<string> {
   const { includeMetadata = true, includeSynopsis = false } = options;
 
+  const db = getDb();
   const [projectRows, projectChapters] = await Promise.all([
     db.select().from(projects).where(eq(projects.id, projectId)).limit(1),
     db
@@ -74,6 +75,7 @@ export async function exportProjectAsMarkdown(
 }
 
 export async function exportChapterAsMarkdown(chapterId: string): Promise<string> {
+  const db = getDb();
   const chapterRows = await db
     .select()
     .from(chapters)

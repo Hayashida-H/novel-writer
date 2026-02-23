@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "projectId is required" }, { status: 400 });
     }
 
-    const status = req.nextUrl.searchParams.get("status");
+    const status = req.nextUrl.searchParams.get("status") as typeof agentTasks.$inferSelect.status | null;
     const db = getDb();
 
     const items = await db
