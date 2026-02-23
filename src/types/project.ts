@@ -8,6 +8,8 @@ import type {
   worldSettings,
   chapters,
   chapterVersions,
+  foreshadowing,
+  styleReferences,
 } from "@/lib/db/schema";
 
 // Select types (what you get from DB)
@@ -27,6 +29,8 @@ export type NewPlotPoint = InferInsertModel<typeof plotPoints>;
 export type NewCharacter = InferInsertModel<typeof characters>;
 export type NewWorldSetting = InferInsertModel<typeof worldSettings>;
 export type NewChapter = InferInsertModel<typeof chapters>;
+export type Foreshadowing = InferSelectModel<typeof foreshadowing>;
+export type StyleReference = InferSelectModel<typeof styleReferences>;
 
 // Project status
 export type ProjectStatus = "preparation" | "writing" | "reviewing" | "completed";

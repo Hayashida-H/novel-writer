@@ -278,6 +278,7 @@ export const agentConfigs = pgTable(
     temperature: real("temperature").default(0.7).notNull(),
     maxTokens: integer("max_tokens").default(4096).notNull(),
     customInstructions: text("custom_instructions"),
+    styleProfile: text("style_profile"),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -355,4 +356,69 @@ export const chatMessages = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index("idx_chat_messages_session").on(table.sessionId, table.createdAt)]
+);
+
+// ============================================================
+// FORESHADOWING (伏線管理)
+// ============================================================
+
+export const foreshadowing = pgTable(
+  "foreshadowing",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    type: text("type", {
+      enum: ["foreshadowing", "chekhovs_gun", "recurring_motif", "red_herring"],
+    })
+      .default("foreshadowing")
+      .notNull(),
+    status: text("status", {
+      enum: ["planted", "hinted", "partially_resolved", "resolved", "abandoned"],
+    })
+      .default("planted")
+      .notNull(),
+    plantedChapterId: uuid("planted_chapter_id").references(() => chapters.id, {
+      onDelete: "set null",
+    }),
+    plantedContext: text("planted_context"),
+    targetChapter: integer("target_chapter"),
+    resolvedChapterId: uuid("resolved_chapter_id").references(() => chapters.id, {
+      onDelete: "set null",
+    }),
+    resolvedContext: text("resolved_context"),
+    priority: text("priority", {
+      enum: ["high", "medium", "low"],
+    })
+      .default("medium")
+      .notNull(),
+    relatedCharacterIds: jsonb("related_character_ids").default([]).$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_foreshadowing_project").on(table.projectId, table.status)]
+);
+
+// ============================================================
+// STYLE REFERENCES (文体参照)
+// ============================================================
+
+export const styleReferences = pgTable(
+  "style_references",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    sampleText: text("sample_text"),
+    styleNotes: text("style_notes"),
+    isActive: boolean("is_active").default(true).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index("idx_style_references_project").on(table.projectId)]
 );
