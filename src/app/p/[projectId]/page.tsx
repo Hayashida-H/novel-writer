@@ -15,6 +15,8 @@ import {
   PenTool,
   BookOpen,
   MessageSquare,
+  GitBranch,
+  Download,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -59,6 +61,12 @@ export default async function ProjectDashboard({
       description: "世界設定の管理",
     },
     {
+      href: `/p/${projectId}/prepare/foreshadowing`,
+      icon: GitBranch,
+      label: "伏線管理",
+      description: "伏線の設置・回収を追跡",
+    },
+    {
       href: `/p/${projectId}/write`,
       icon: PenTool,
       label: "執筆",
@@ -69,6 +77,12 @@ export default async function ProjectDashboard({
       icon: BookOpen,
       label: "レビュー",
       description: "書籍形式で閲読・指摘",
+    },
+    {
+      href: `/p/${projectId}/export`,
+      icon: Download,
+      label: "エクスポート",
+      description: "小説をファイルとして出力",
     },
   ];
 

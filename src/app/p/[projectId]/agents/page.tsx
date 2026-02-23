@@ -1,4 +1,7 @@
 import { Header } from "@/components/layout/header";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AgentConfigList } from "@/components/agents/agent-config-list";
+import { StyleReferenceList } from "@/components/agents/style-reference-list";
 
 export default async function AgentsPage({
   params,
@@ -10,14 +13,19 @@ export default async function AgentsPage({
   return (
     <div className="flex h-screen flex-col">
       <Header projectId={projectId} title="エージェント" />
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <p className="text-lg font-medium">エージェント設定</p>
-          <p className="mt-1 text-sm">
-            7つのAIエージェントの設定・カスタマイズを行います
-          </p>
-          <p className="mt-4 text-xs">Phase 3で実装予定</p>
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <Tabs defaultValue="agents">
+          <TabsList>
+            <TabsTrigger value="agents">エージェント設定</TabsTrigger>
+            <TabsTrigger value="style">文体参照</TabsTrigger>
+          </TabsList>
+          <TabsContent value="agents" className="mt-4">
+            <AgentConfigList projectId={projectId} />
+          </TabsContent>
+          <TabsContent value="style" className="mt-4">
+            <StyleReferenceList projectId={projectId} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

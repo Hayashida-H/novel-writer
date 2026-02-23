@@ -8,10 +8,11 @@ import {
   Map,
   Users,
   Globe,
+  GitBranch,
   PenTool,
   Eye,
   Bot,
-  Settings,
+  Download,
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -32,6 +33,7 @@ const navItems = [
       { href: "prepare/plot", label: "プロット", icon: Map },
       { href: "prepare/characters", label: "キャラクター", icon: Users },
       { href: "prepare/world", label: "世界観", icon: Globe },
+      { href: "prepare/foreshadowing", label: "伏線管理", icon: GitBranch },
     ],
   },
   {
@@ -45,6 +47,7 @@ const navItems = [
     group: "設定",
     items: [
       { href: "agents", label: "エージェント", icon: Bot },
+      { href: "export", label: "エクスポート", icon: Download },
     ],
   },
 ];
