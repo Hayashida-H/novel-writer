@@ -1,4 +1,7 @@
 import { Sidebar } from "@/components/layout/sidebar";
+import { getDb } from "@/lib/db";
+import { projects } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 
 export default async function ProjectLayout({
   children,
@@ -9,8 +12,14 @@ export default async function ProjectLayout({
 }) {
   const { projectId } = await params;
 
-  // TODO: Fetch project title from DB
-  const projectTitle = "プロジェクト";
+  const db = getDb();
+  const [project] = await db
+    .select({ title: projects.title })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+
+  const projectTitle = project?.title || "プロジェクト";
 
   return (
     <div className="flex h-screen">

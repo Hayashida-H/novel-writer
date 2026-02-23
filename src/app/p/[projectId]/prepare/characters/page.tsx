@@ -1,4 +1,5 @@
 import { Header } from "@/components/layout/header";
+import { CharacterList } from "@/components/characters/character-list";
 
 export default async function CharactersPage({
   params,
@@ -10,14 +11,8 @@ export default async function CharactersPage({
   return (
     <div className="flex h-screen flex-col">
       <Header projectId={projectId} title="キャラクター" />
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <p className="text-lg font-medium">キャラクター管理</p>
-          <p className="mt-1 text-sm">
-            登場人物のプロフィールと関係図を管理します
-          </p>
-          <p className="mt-4 text-xs">Phase 2で実装予定</p>
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <CharacterList projectId={projectId} />
       </div>
     </div>
   );

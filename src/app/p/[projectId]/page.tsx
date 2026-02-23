@@ -19,6 +19,16 @@ import {
   Download,
 } from "lucide-react";
 import Link from "next/link";
+import { getDb } from "@/lib/db";
+import { projects } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
+
+const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
+  preparation: { label: "準備中", variant: "secondary" },
+  writing: { label: "執筆中", variant: "default" },
+  reviewing: { label: "レビュー中", variant: "outline" },
+  completed: { label: "完了", variant: "default" },
+};
 
 export default async function ProjectDashboard({
   params,
@@ -27,13 +37,15 @@ export default async function ProjectDashboard({
 }) {
   const { projectId } = await params;
 
-  // TODO: Fetch project data
-  const project = {
-    title: "プロジェクト",
-    status: "preparation",
-    genre: "",
-    description: "",
-  };
+  const db = getDb();
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .limit(1);
+
+  const p = project || { title: "プロジェクト", status: "preparation", genre: null, description: null };
+  const statusInfo = STATUS_LABELS[p.status] || STATUS_LABELS.preparation;
 
   const quickLinks = [
     {
@@ -90,17 +102,17 @@ export default async function ProjectDashboard({
     <div>
       <Header
         projectId={projectId}
-        projectTitle={project.title}
+        projectTitle={p.title}
         title="ダッシュボード"
       />
       <div className="p-4 md:p-6">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold">{project.title}</h2>
+          <h2 className="text-2xl font-bold">{p.title}</h2>
           <div className="mt-1 flex items-center gap-2">
-            <Badge variant="secondary">準備中</Badge>
-            {project.genre && (
+            <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+            {p.genre && (
               <span className="text-sm text-muted-foreground">
-                {project.genre}
+                {p.genre}
               </span>
             )}
           </div>

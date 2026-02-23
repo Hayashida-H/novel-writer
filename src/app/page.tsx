@@ -9,6 +9,9 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { getDb } from "@/lib/db";
+import { projects } from "@/lib/db/schema";
+import { desc } from "drizzle-orm";
 
 const STATUS_LABELS: Record<
   string,
@@ -20,15 +23,12 @@ const STATUS_LABELS: Record<
   completed: { label: "完了", variant: "default" },
 };
 
-export default function HomePage() {
-  // TODO: Fetch projects from DB
-  const projects: Array<{
-    id: string;
-    title: string;
-    description: string | null;
-    genre: string | null;
-    status: string;
-  }> = [];
+export default async function HomePage() {
+  const db = getDb();
+  const projectList = await db
+    .select()
+    .from(projects)
+    .orderBy(desc(projects.updatedAt));
 
   return (
     <div className="min-h-screen bg-background">
@@ -48,7 +48,7 @@ export default function HomePage() {
           </Button>
         </div>
 
-        {projects.length === 0 ? (
+        {projectList.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-16">
               <BookOpen className="mb-4 h-12 w-12 text-muted-foreground" />
@@ -68,7 +68,7 @@ export default function HomePage() {
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {projects.map((project) => {
+            {projectList.map((project) => {
               const statusInfo =
                 STATUS_LABELS[project.status] || STATUS_LABELS.preparation;
               return (

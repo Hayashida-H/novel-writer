@@ -1,4 +1,5 @@
 import { Header } from "@/components/layout/header";
+import { WorldSettingsList } from "@/components/world/world-settings-list";
 
 export default async function WorldPage({
   params,
@@ -10,14 +11,8 @@ export default async function WorldPage({
   return (
     <div className="flex h-screen flex-col">
       <Header projectId={projectId} title="世界観" />
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <p className="text-lg font-medium">世界観設定</p>
-          <p className="mt-1 text-sm">
-            地理・文化・ルールなどの世界設定を管理します
-          </p>
-          <p className="mt-4 text-xs">Phase 2で実装予定</p>
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 md:p-6">
+        <WorldSettingsList projectId={projectId} />
       </div>
     </div>
   );
