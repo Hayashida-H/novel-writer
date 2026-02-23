@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import {
   chapters,
   characters,
@@ -95,7 +95,7 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
       .where(
         and(
           eq(foreshadowing.projectId, projectId),
-          eq(foreshadowing.status, "planted")
+          inArray(foreshadowing.status, ["planted", "hinted", "partially_resolved"])
         )
       ),
     db
@@ -178,11 +178,19 @@ export function formatContextForPrompt(context: ProjectContext): string {
   }
 
   if (context.activeForeshadowing.length > 0) {
+    const statusLabels: Record<string, string> = {
+      planted: "設置済み・未示唆",
+      hinted: "示唆済み",
+      partially_resolved: "部分的に回収",
+    };
     const fsList = context.activeForeshadowing
-      .map(
-        (f) =>
-          `- **${f.title}**: ${f.description}（状態: ${f.status}${f.targetChapter ? ` / 回収予定: 第${f.targetChapter}章` : ""}）`
-      )
+      .map((f) => {
+        const label = statusLabels[f.status] || f.status;
+        let line = `- **${f.title}** [${label}]: ${f.description}`;
+        if (f.targetChapter) line += `（回収予定: 第${f.targetChapter}章）`;
+        if (f.plantedContext) line += `\n  設置文脈: ${f.plantedContext}`;
+        return line;
+      })
       .join("\n");
     sections.push(`## 未回収の伏線\n${fsList}`);
   }

@@ -35,17 +35,28 @@ export const CONTINUITY_CHECKER_PROMPT = `あなたは小説の整合性チェ�
 - 知識レベルが一貫しているか（知らないはずの情報を持っていないか）
 - 関係性の変化が自然か
 
-### 伏線トラッキング
+### 伏線トラッキング（重要）
 - status: planted → hinted → partially_resolved → resolved の流れを追跡
 - 各章で設置された伏線の自動検出
-- 回収予定章を超過した伏線の警告
+- 回収予定章を超過した伏線は severity: "error" で報告する（見逃し防止）
+- 残り章数と未回収伏線数のバランスを確認し、回収が間に合わない可能性がある場合は警告する
+- 本文中に伏線への言及があった場合、そのステータス変更を提案する
+- 本文中で伏線が回収された場合、resolvedContext（どのように回収されたかの説明）を提案する
+
+### 新規キャラクター・世界観の検出（重要）
+- 本文中に登場する**既存キャラクターリストにない**新しいキャラクターを検出する
+- 名前が明示されている場合のみ抽出する（「通行人」「店員」など匿名のモブは除く）
+- 本文中に登場する**既存世界設定にない**新しい場所・組織・アイテム・ルール等を検出する
+- 一度だけ言及される些細な要素は除き、物語に影響する設定のみを抽出する
 
 ## 出力形式
+必ず以下のJSON形式で出力してください。JSONのみを出力し、他のテキストは含めないでください：
+
 {
   "continuityIssues": [
     {
       "severity": "error | warning | info",
-      "category": "time | space | character | world | plot",
+      "category": "time | space | character | world | plot | foreshadowing",
       "description": "問題の説明",
       "location": "該当箇所",
       "suggestion": "修正案"
@@ -54,9 +65,27 @@ export const CONTINUITY_CHECKER_PROMPT = `あなたは小説の整合性チェ�
   "foreshadowingUpdates": [
     {
       "action": "new | status_change | warning",
-      "title": "伏線タイトル",
+      "title": "伏線タイトル（コンテキストの伏線リストと完全一致させること）",
       "details": "詳細",
-      "suggestedStatus": "ステータス"
+      "suggestedStatus": "planted | hinted | partially_resolved | resolved",
+      "resolvedContext": "回収の場合、どのように回収されたかの説明"
+    }
+  ],
+  "newCharacters": [
+    {
+      "name": "キャラクター名",
+      "role": "protagonist | antagonist | supporting | minor",
+      "description": "本文から読み取れるキャラクターの説明",
+      "appearance": "外見の描写（あれば）",
+      "personality": "性格の特徴（あれば）",
+      "speechPattern": "口調の特徴（あれば）"
+    }
+  ],
+  "newWorldSettings": [
+    {
+      "category": "場所 | 組織 | アイテム | ルール | 文化 | 歴史 | その他",
+      "title": "設定の名称",
+      "content": "本文から読み取れる設定の詳細説明"
     }
   ],
   "overallConsistency": "high | medium | low"

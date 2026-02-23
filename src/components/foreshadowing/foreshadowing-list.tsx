@@ -26,7 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, GitBranch, ArrowRight } from "lucide-react";
+import { Plus, Pencil, Trash2, GitBranch, ArrowRight, Sparkles, Loader2 } from "lucide-react";
+import { useSSEGeneration } from "@/hooks/use-sse-generation";
 import {
   FORESHADOWING_TYPE_LABELS,
   FORESHADOWING_STATUS_LABELS,
@@ -75,6 +76,11 @@ export function ForeshadowingList({ projectId }: ForeshadowingListProps) {
   const [editingItem, setEditingItem] = useState<Partial<ForeshadowingItem> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  const { generate, isGenerating } = useSSEGeneration<ForeshadowingItem>({
+    endpoint: "/api/generate/foreshadowing",
+    onItems: (newItems) => setItems((prev) => [...prev, ...newItems]),
+  });
 
   useEffect(() => {
     async function load() {
@@ -174,21 +180,36 @@ export function ForeshadowingList({ projectId }: ForeshadowingListProps) {
               </Button>
             ))}
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setIsNew(true);
-              setEditingItem({
-                title: "",
-                description: "",
-                type: "foreshadowing",
-                priority: "medium",
-              });
-            }}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            伏線を追加
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => generate(projectId)}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {isGenerating ? "生成中..." : "AIで生成"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setIsNew(true);
+                setEditingItem({
+                  title: "",
+                  description: "",
+                  type: "foreshadowing",
+                  priority: "medium",
+                });
+              }}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              追加
+            </Button>
+          </div>
         </div>
 
         {/* List */}

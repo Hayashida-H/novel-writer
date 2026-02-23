@@ -84,13 +84,13 @@ export async function POST(req: NextRequest) {
     // Add points if provided
     let points: typeof plotPoints.$inferSelect[] = [];
     if (pointsData && pointsData.length > 0) {
-      const values = pointsData.map((p: { act: string; title: string; description: string; sortOrder: number; chapterHint?: number; isMajorTurningPoint?: boolean }, i: number) => ({
+      const values = pointsData.map((p: { act: string; title: string; description: string; sortOrder: number; chapterHints?: number[]; isMajorTurningPoint?: boolean }, i: number) => ({
         plotStructureId: structure.id,
         act: p.act,
         title: p.title,
         description: p.description,
         sortOrder: p.sortOrder ?? i,
-        chapterHint: p.chapterHint || null,
+        chapterHints: p.chapterHints || [],
         isMajorTurningPoint: p.isMajorTurningPoint || false,
       }));
 
@@ -110,17 +110,23 @@ export async function PUT(req: NextRequest) {
     const { type } = body;
 
     if (type === "structure") {
-      const { id, ...updates } = body;
+      const { id, clearPoints, type: _type, ...updates } = body;
       if (!id) {
         return NextResponse.json({ error: "id is required" }, { status: 400 });
       }
       const db = getDb();
+
+      // If structureType changed and clearPoints requested, delete all points
+      if (clearPoints && updates.structureType) {
+        await db.delete(plotPoints).where(eq(plotPoints.plotStructureId, id));
+      }
+
       const [updated] = await db
         .update(plotStructure)
-        .set({ ...updates, updatedAt: new Date(), type: undefined })
+        .set({ ...updates, updatedAt: new Date() })
         .where(eq(plotStructure.id, id))
         .returning();
-      return NextResponse.json(updated);
+      return NextResponse.json({ ...updated, pointsCleared: !!clearPoints });
     } else {
       // Update a plot point
       const { id, ...updates } = body;

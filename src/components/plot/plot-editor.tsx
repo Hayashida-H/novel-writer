@@ -26,7 +26,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Star, Save } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Plus, Pencil, Trash2, Star, Save, Sparkles, Loader2, Search, ListOrdered } from "lucide-react";
+import { useSSEGeneration } from "@/hooks/use-sse-generation";
+import { SimilarityCheckDialog } from "@/components/similarity/similarity-check-dialog";
 
 interface PlotStructureData {
   id: string;
@@ -43,7 +55,7 @@ interface PlotPointData {
   title: string;
   description: string;
   sortOrder: number;
-  chapterHint: number | null;
+  chapterHints: number[];
   isMajorTurningPoint: boolean | null;
 }
 
@@ -51,6 +63,7 @@ const STRUCTURE_TYPES = [
   { value: "kishotenketsu", label: "起承転結" },
   { value: "three_act", label: "三幕構成" },
   { value: "hero_journey", label: "英雄の旅" },
+  { value: "serial", label: "連載" },
   { value: "custom", label: "カスタム" },
 ];
 
@@ -67,12 +80,30 @@ const THREE_ACT_ACTS = [
   { value: "act3", label: "第三幕", description: "解決" },
 ];
 
+const SERIAL_ACTS = [
+  { value: "introduction", label: "導入", description: "世界観・キャラ紹介" },
+  { value: "development", label: "展開", description: "物語の広がり" },
+  { value: "escalation", label: "盛り上がり", description: "緊張・対立の高まり" },
+  { value: "climax", label: "クライマックス", description: "最大の山場" },
+  { value: "resolution", label: "収束", description: "結末・余韻" },
+];
+
+const HERO_JOURNEY_ACTS = [
+  { value: "departure", label: "出発", description: "日常からの旅立ち" },
+  { value: "initiation", label: "試練", description: "冒険と成長" },
+  { value: "return", label: "帰還", description: "帰還と変容" },
+];
+
 function getActsForType(type: string) {
   switch (type) {
     case "kishotenketsu":
       return KISHOTENKETSU_ACTS;
     case "three_act":
       return THREE_ACT_ACTS;
+    case "hero_journey":
+      return HERO_JOURNEY_ACTS;
+    case "serial":
+      return SERIAL_ACTS;
     default:
       return KISHOTENKETSU_ACTS;
   }
@@ -86,6 +117,14 @@ const ACT_COLORS: Record<string, string> = {
   act1: "border-l-green-500",
   act2: "border-l-amber-500",
   act3: "border-l-red-500",
+  departure: "border-l-green-500",
+  initiation: "border-l-amber-500",
+  return: "border-l-purple-500",
+  introduction: "border-l-green-500",
+  development: "border-l-blue-500",
+  escalation: "border-l-amber-500",
+  climax: "border-l-red-500",
+  resolution: "border-l-purple-500",
 };
 
 interface PlotEditorProps {
@@ -101,6 +140,31 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
   const [themesText, setThemesText] = useState("");
   const [structureType, setStructureType] = useState("kishotenketsu");
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingStructureType, setPendingStructureType] = useState<string | null>(null);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
+  const [generateCount, setGenerateCount] = useState<string>("auto");
+
+  const { generate: generatePoints, isGenerating } = useSSEGeneration<PlotPointData>({
+    endpoint: "/api/generate/plot-points",
+    onItems: (items) => {
+      setPoints((prev) => [...prev, ...items]);
+      setShowGenerateDialog(false);
+    },
+    onError: (msg) => {
+      console.error("Plot points generation error:", msg);
+      setShowGenerateDialog(false);
+    },
+  });
+
+  const { generate: organizePoints, isGenerating: isOrganizing } = useSSEGeneration<PlotPointData>({
+    endpoint: "/api/generate/organize-plot-points",
+    onItems: (items) => {
+      setPoints(items);
+    },
+    onError: (msg) => {
+      console.error("Plot points organize error:", msg);
+    },
+  });
 
   useEffect(() => {
     async function load() {
@@ -122,6 +186,49 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
     }
     load();
   }, [projectId]);
+
+  const handleStructureTypeChange = useCallback(
+    (newType: string) => {
+      if (points.length > 0 && structure && newType !== structureType) {
+        setPendingStructureType(newType);
+      } else {
+        setStructureType(newType);
+      }
+    },
+    [points.length, structure, structureType]
+  );
+
+  const handleConfirmStructureChange = useCallback(async () => {
+    if (!pendingStructureType || !structure) return;
+    try {
+      const res = await fetch("/api/plot", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "structure",
+          id: structure.id,
+          structureType: pendingStructureType,
+          clearPoints: true,
+        }),
+      });
+      if (res.ok) {
+        setStructureType(pendingStructureType);
+        setPoints([]);
+        const updated = await res.json();
+        setStructure((prev) => prev ? { ...prev, structureType: updated.structureType } : prev);
+      }
+    } catch (error) {
+      console.error("Failed to change structure type:", error);
+    } finally {
+      setPendingStructureType(null);
+    }
+  }, [pendingStructureType, structure]);
+
+  const handleGeneratePoints = useCallback(() => {
+    if (!structure) return;
+    const count = generateCount === "auto" ? undefined : parseInt(generateCount);
+    generatePoints(projectId, count ? { count } : undefined);
+  }, [structure, generateCount, generatePoints, projectId]);
 
   const handleSaveStructure = useCallback(async () => {
     setIsSaving(true);
@@ -169,7 +276,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
               title: editingPoint.title,
               description: editingPoint.description,
               sortOrder: points.length,
-              chapterHint: editingPoint.chapterHint,
+              chapterHints: editingPoint.chapterHints || [],
               isMajorTurningPoint: editingPoint.isMajorTurningPoint,
             }],
           }),
@@ -191,7 +298,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
             act: editingPoint.act,
             title: editingPoint.title,
             description: editingPoint.description,
-            chapterHint: editingPoint.chapterHint,
+            chapterHints: editingPoint.chapterHints || [],
             isMajorTurningPoint: editingPoint.isMajorTurningPoint,
           }),
         });
@@ -228,7 +335,7 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
         <CardContent className="space-y-4">
           <div>
             <Label>構造タイプ</Label>
-            <Select value={structureType} onValueChange={setStructureType}>
+            <Select value={structureType} onValueChange={handleStructureTypeChange}>
               <SelectTrigger className="w-full max-w-xs">
                 <SelectValue />
               </SelectTrigger>
@@ -259,32 +366,73 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
             />
           </div>
 
-          <Button onClick={handleSaveStructure} disabled={isSaving} size="sm">
-            <Save className="mr-1.5 h-3.5 w-3.5" />
-            {isSaving ? "保存中..." : "構造を保存"}
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleSaveStructure} disabled={isSaving} size="sm">
+              <Save className="mr-1.5 h-3.5 w-3.5" />
+              {isSaving ? "保存中..." : "構造を保存"}
+            </Button>
+            <SimilarityCheckDialog
+              input={{
+                synopsis,
+                themes: themesText.split(",").map((t) => t.trim()).filter(Boolean),
+                plotPoints: points.map((p) => ({
+                  act: p.act,
+                  title: p.title,
+                  description: p.description,
+                })),
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
       {/* Plot Points Timeline */}
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">プロットポイント</h3>
-        <Button
-          size="sm"
-          disabled={!structure}
-          onClick={() => {
-            setIsNewPoint(true);
-            setEditingPoint({
-              act: acts[0]?.value || "ki",
-              title: "",
-              description: "",
-              isMajorTurningPoint: false,
-            });
-          }}
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          ポイント追加
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!structure || isGenerating}
+            onClick={() => setShowGenerateDialog(true)}
+          >
+            {isGenerating ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isGenerating ? "生成中..." : "AIで生成"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!structure || isOrganizing || points.length === 0}
+            onClick={() => organizePoints(projectId)}
+          >
+            {isOrganizing ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ListOrdered className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isOrganizing ? "整理中..." : "ポイントを整理"}
+          </Button>
+          <Button
+            size="sm"
+            disabled={!structure}
+            onClick={() => {
+              setIsNewPoint(true);
+              setEditingPoint({
+                act: acts[0]?.value || "ki",
+                title: "",
+                description: "",
+                isMajorTurningPoint: false,
+              });
+            }}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            ポイント追加
+          </Button>
+        </div>
       </div>
 
       {!structure ? (
@@ -319,9 +467,9 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
                               {point.isMajorTurningPoint && (
                                 <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                               )}
-                              {point.chapterHint && (
+                              {point.chapterHints && point.chapterHints.length > 0 && (
                                 <span className="text-xs text-muted-foreground">
-                                  第{point.chapterHint}章頃
+                                  第{point.chapterHints.join(",")}章
                                 </span>
                               )}
                             </div>
@@ -361,6 +509,79 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
         </div>
       )}
 
+      {/* Structure Type Change Confirmation */}
+      <AlertDialog
+        open={!!pendingStructureType}
+        onOpenChange={(open) => !open && setPendingStructureType(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>構造タイプを変更しますか？</AlertDialogTitle>
+            <AlertDialogDescription>
+              構造タイプを変更すると、既存のプロットポイント（{points.length}件）がすべて削除されます。この操作は元に戻せません。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>キャンセル</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmStructureChange}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              変更して削除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AI Generate Dialog */}
+      <Dialog open={showGenerateDialog} onOpenChange={(open) => !open && !isGenerating && setShowGenerateDialog(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>プロットポイントをAI生成</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>生成数</Label>
+              <Select value={generateCount} onValueChange={setGenerateCount}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">おまかせ</SelectItem>
+                  <SelectItem value="4">4個</SelectItem>
+                  <SelectItem value="6">6個</SelectItem>
+                  <SelectItem value="8">8個</SelectItem>
+                  <SelectItem value="10">10個</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {points.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                既存のポイント（{points.length}件）に追加されます。重複しないポイントが生成されます。
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateDialog(false)} disabled={isGenerating}>
+              キャンセル
+            </Button>
+            <Button onClick={handleGeneratePoints} disabled={isGenerating}>
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  生成中...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+                  生成する
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Edit Point Dialog */}
       <Dialog open={!!editingPoint} onOpenChange={(open) => !open && setEditingPoint(null)}>
         <DialogContent className="max-w-lg">
@@ -390,18 +611,19 @@ export function PlotEditor({ projectId }: PlotEditorProps) {
                   </Select>
                 </div>
                 <div>
-                  <Label>章ヒント</Label>
+                  <Label>章ヒント（カンマ区切り）</Label>
                   <Input
-                    type="number"
-                    min={1}
-                    value={editingPoint.chapterHint || ""}
+                    value={(editingPoint.chapterHints || []).join(", ")}
                     onChange={(e) =>
                       setEditingPoint({
                         ...editingPoint,
-                        chapterHint: e.target.value ? parseInt(e.target.value) : null,
+                        chapterHints: e.target.value
+                          .split(/[,、\s]+/)
+                          .map((s) => parseInt(s.trim()))
+                          .filter((n) => !isNaN(n) && n > 0),
                       })
                     }
-                    placeholder="5"
+                    placeholder="1, 2, 3"
                   />
                 </div>
               </div>

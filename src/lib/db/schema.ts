@@ -48,7 +48,7 @@ export const plotStructure = pgTable("plot_structure", {
     .references(() => projects.id, { onDelete: "cascade" })
     .unique(),
   structureType: text("structure_type", {
-    enum: ["kishotenketsu", "three_act", "hero_journey", "custom"],
+    enum: ["kishotenketsu", "three_act", "hero_journey", "serial", "custom"],
   })
     .default("kishotenketsu")
     .notNull(),
@@ -69,7 +69,7 @@ export const plotPoints = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull(),
     sortOrder: integer("sort_order").notNull(),
-    chapterHint: integer("chapter_hint"),
+    chapterHints: jsonb("chapter_hints").default([]).$type<number[]>(),
     isMajorTurningPoint: boolean("is_major_turning_point").default(false),
     metadata: jsonb("metadata").default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -145,7 +145,30 @@ export const worldSettings = pgTable(
 );
 
 // ============================================================
-// CHAPTERS
+// ARCS (章 / セクション)
+// ============================================================
+
+export const arcs = pgTable(
+  "arcs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    arcNumber: integer("arc_number").notNull(),
+    title: text("title").notNull(),
+    description: text("description"),
+    plotPointIds: jsonb("plot_point_ids").default([]).$type<string[]>(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("idx_arcs_project_number").on(table.projectId, table.arcNumber),
+  ]
+);
+
+// ============================================================
+// CHAPTERS (話 / エピソード)
 // ============================================================
 
 export const chapters = pgTable(
@@ -155,6 +178,7 @@ export const chapters = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    arcId: uuid("arc_id").references(() => arcs.id, { onDelete: "set null" }),
     chapterNumber: integer("chapter_number").notNull(),
     title: text("title"),
     synopsis: text("synopsis"),

@@ -26,7 +26,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Globe, MapPin, Scroll, Sparkles, Building2 } from "lucide-react";
+import { Plus, Pencil, Trash2, Globe, MapPin, Scroll, Sparkles, Building2, Wand2, Loader2 } from "lucide-react";
+import { useSSEGeneration } from "@/hooks/use-sse-generation";
 
 interface WorldSettingItem {
   id: string;
@@ -57,6 +58,11 @@ export function WorldSettingsList({ projectId }: WorldSettingsListProps) {
   const [editingItem, setEditingItem] = useState<Partial<WorldSettingItem> | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [filterCategory, setFilterCategory] = useState<string>("all");
+
+  const { generate, isGenerating } = useSSEGeneration<WorldSettingItem>({
+    endpoint: "/api/generate/world-settings",
+    onItems: (newItems) => setItems((prev) => [...prev, ...newItems]),
+  });
 
   useEffect(() => {
     async function load() {
@@ -141,16 +147,31 @@ export function WorldSettingsList({ projectId }: WorldSettingsListProps) {
               </Button>
             ))}
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setIsNew(true);
-              setEditingItem({ category: "geography", title: "", content: "" });
-            }}
-          >
-            <Plus className="mr-1.5 h-3.5 w-3.5" />
-            設定を追加
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => generate(projectId)}
+              disabled={isGenerating}
+            >
+              {isGenerating ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {isGenerating ? "生成中..." : "AIで生成"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => {
+                setIsNew(true);
+                setEditingItem({ category: "geography", title: "", content: "" });
+              }}
+            >
+              <Plus className="mr-1.5 h-3.5 w-3.5" />
+              追加
+            </Button>
+          </div>
         </div>
 
         {filtered.length === 0 ? (

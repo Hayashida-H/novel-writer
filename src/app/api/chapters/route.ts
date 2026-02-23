@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { projectId, chapterNumber, title, synopsis, content, plotPointIds, characterIds } = body;
+    const { projectId, chapterNumber, title, synopsis, content, plotPointIds, characterIds, arcId } = body;
 
     if (!projectId || chapterNumber == null) {
       return NextResponse.json(
@@ -51,6 +51,7 @@ export async function POST(req: NextRequest) {
         wordCount,
         plotPointIds: plotPointIds || [],
         characterIds: characterIds || [],
+        arcId: arcId || null,
       })
       .returning();
 

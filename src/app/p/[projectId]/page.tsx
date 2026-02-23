@@ -22,6 +22,7 @@ import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { GenreEditButton } from "@/components/genre/genre-edit-button";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "outline" }> = {
   preparation: { label: "準備中", variant: "secondary" },
@@ -110,11 +111,7 @@ export default async function ProjectDashboard({
           <h2 className="text-2xl font-bold">{p.title}</h2>
           <div className="mt-1 flex items-center gap-2">
             <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
-            {p.genre && (
-              <span className="text-sm text-muted-foreground">
-                {p.genre}
-              </span>
-            )}
+            <GenreEditButton projectId={projectId} currentGenre={p.genre ?? null} />
           </div>
         </div>
 

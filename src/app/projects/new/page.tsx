@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -20,42 +20,67 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, Sparkles } from "lucide-react";
 import Link from "next/link";
-
-const GENRES = [
-  "ファンタジー",
-  "SF",
-  "ミステリー",
-  "恋愛",
-  "ホラー",
-  "歴史",
-  "ライトノベル",
-  "純文学",
-  "その他",
-];
+import { GenreSelector } from "@/components/genre/genre-selector";
+import type { PlotCandidate, PlotPointSuggestion } from "@/types/plot-suggestion";
 
 const STRUCTURE_TYPES = [
   { value: "kishotenketsu", label: "起承転結" },
   { value: "three_act", label: "三幕構成" },
   { value: "hero_journey", label: "英雄の旅" },
+  { value: "serial", label: "連載" },
   { value: "custom", label: "カスタム" },
 ];
 
 export default function NewProjectPage() {
+  return (
+    <Suspense>
+      <NewProjectForm />
+    </Suspense>
+  );
+}
+
+function NewProjectForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [genre, setGenre] = useState("");
+  const [structureType, setStructureType] = useState("kishotenketsu");
+  const [plotPoints, setPlotPoints] = useState<PlotPointSuggestion[]>([]);
+  const [fromSuggestion, setFromSuggestion] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get("from") === "suggestion") {
+      const stored = sessionStorage.getItem("plot-suggestion");
+      if (stored) {
+        try {
+          const candidate: PlotCandidate = JSON.parse(stored);
+          setTitle(candidate.title);
+          setDescription(candidate.description);
+          setGenre(candidate.genre);
+          setStructureType(candidate.structureType);
+          setPlotPoints(candidate.plotPoints || []);
+          setFromSuggestion(true);
+          sessionStorage.removeItem("plot-suggestion");
+        } catch {
+          // ignore invalid data
+        }
+      }
+    }
+  }, [searchParams]);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
 
-    const formData = new FormData(e.currentTarget);
     const data = {
-      title: formData.get("title") as string,
-      description: formData.get("description") as string,
-      genre: formData.get("genre") as string,
-      structureType: formData.get("structureType") as string,
+      title,
+      description,
+      genre,
+      structureType,
       language: "ja",
     };
 
@@ -69,6 +94,27 @@ export default function NewProjectPage() {
       if (!res.ok) throw new Error("Failed to create project");
 
       const project = await res.json();
+
+      // Save plot points if they came from a suggestion
+      if (plotPoints.length > 0) {
+        await fetch("/api/plot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: project.id,
+            structureType,
+            synopsis: description,
+            points: plotPoints.map((p, i) => ({
+              act: p.act,
+              title: p.title,
+              description: p.description,
+              sortOrder: i,
+              isMajorTurningPoint: p.isMajorTurningPoint,
+            })),
+          }),
+        });
+      }
+
       router.push(`/p/${project.id}`);
     } catch {
       setLoading(false);
@@ -94,6 +140,21 @@ export default function NewProjectPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {!fromSuggestion && (
+              <Link
+                href="/projects/new/suggestions"
+                className="mb-6 flex items-center gap-2 rounded-lg border border-dashed p-3 text-sm transition-colors hover:bg-accent/50"
+              >
+                <Sparkles className="h-4 w-4 text-muted-foreground" />
+                <span className="text-muted-foreground">
+                  アイデアに困っていますか？
+                </span>
+                <span className="text-primary underline-offset-2 hover:underline">
+                  プロット候補から選択する
+                </span>
+              </Link>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="title">タイトル</Label>
@@ -101,6 +162,8 @@ export default function NewProjectPage() {
                   id="title"
                   name="title"
                   placeholder="小説のタイトル（仮題でOK）"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   required
                 />
               </div>
@@ -111,6 +174,8 @@ export default function NewProjectPage() {
                   id="description"
                   name="description"
                   placeholder="どんな物語にしたいか、簡単に書いてください"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   rows={3}
                 />
               </div>
@@ -118,23 +183,16 @@ export default function NewProjectPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="genre">ジャンル</Label>
-                  <Select name="genre">
-                    <SelectTrigger>
-                      <SelectValue placeholder="ジャンルを選択" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {GENRES.map((genre) => (
-                        <SelectItem key={genre} value={genre}>
-                          {genre}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <GenreSelector value={genre} onValueChange={setGenre} />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="structureType">物語構造</Label>
-                  <Select name="structureType" defaultValue="kishotenketsu">
+                  <Select
+                    name="structureType"
+                    value={structureType}
+                    onValueChange={setStructureType}
+                  >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
