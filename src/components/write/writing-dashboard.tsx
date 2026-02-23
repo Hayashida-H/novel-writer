@@ -493,47 +493,44 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
           )}
         </div>
 
-        {/* Recent Tasks */}
-        <div>
-          <h3 className="mb-3 text-sm font-medium">タスク履歴</h3>
-          {tasks.length === 0 ? (
-            <p className="text-sm text-muted-foreground">タスク履歴なし</p>
-          ) : (
+        {/* Active Tasks */}
+        {activeTasks.length > 0 && (
+          <div>
+            <h3 className="mb-3 text-sm font-medium">稼働中エージェント</h3>
             <div className="space-y-2">
-              {tasks.slice(0, 10).map((task) => {
+              {activeTasks.map((task) => {
                 const StatusIcon = TASK_STATUS_ICONS[task.status] || Clock;
                 const agentLabel = AGENT_LABELS[task.agentType as AgentType];
+                const chapter = chapters.find((c) => c.id === task.chapterId);
                 return (
                   <div key={task.id} className="flex items-center gap-3 rounded-lg border p-3">
                     <StatusIcon
                       className={`h-4 w-4 ${
                         task.status === "running"
                           ? "animate-spin text-blue-500"
-                          : task.status === "completed"
-                            ? "text-green-500"
-                            : task.status === "failed"
-                              ? "text-red-500"
-                              : "text-muted-foreground"
+                          : "text-muted-foreground"
                       }`}
                     />
                     <Bot className="h-4 w-4 text-muted-foreground" />
                     <div className="flex-1">
                       <p className="text-xs font-medium">
-                        {agentLabel?.ja || task.agentType} - {task.taskType}
+                        {agentLabel?.ja || task.agentType}
                       </p>
-                      {task.errorMessage && (
-                        <p className="text-xs text-red-500">{task.errorMessage}</p>
+                      {chapter && (
+                        <p className="text-xs text-muted-foreground">
+                          第{chapter.chapterNumber}話: {chapter.title || "無題"}
+                        </p>
                       )}
                     </div>
                     <Badge variant="outline" className="text-xs">
-                      {task.status}
+                      {task.status === "running" ? "実行中" : "待機中"}
                     </Badge>
                   </div>
                 );
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Chapter Editor Dialog */}
