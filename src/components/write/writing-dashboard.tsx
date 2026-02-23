@@ -36,6 +36,7 @@ import {
   ChevronDown,
   ChevronRight,
   ListTree,
+  Square,
 } from "lucide-react";
 import Link from "next/link";
 import { AGENT_LABELS, type AgentType } from "@/types/agent";
@@ -251,6 +252,20 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     }
   }, [projectId, refreshTasks]);
 
+  const handleForceCancel = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/agent-tasks?projectId=${projectId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        setWritingChapterId(null);
+        await refreshTasks();
+      }
+    } catch (error) {
+      console.error("Failed to cancel tasks:", error);
+    }
+  }, [projectId, refreshTasks]);
+
   const toggleArcCollapse = useCallback((arcId: string) => {
     setCollapsedArcs((prev) => {
       const next = new Set(prev);
@@ -367,8 +382,23 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
           </Card>
           <Card>
             <CardContent className="pt-4">
-              <div className="text-2xl font-bold">{activeTasks.length}</div>
-              <p className="text-xs text-muted-foreground">実行中タスク</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-2xl font-bold">{activeTasks.length}</div>
+                  <p className="text-xs text-muted-foreground">実行中タスク</p>
+                </div>
+                {activeTasks.length > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={handleForceCancel}
+                    title="全タスク強制終了"
+                  >
+                    <Square className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
           <Card>

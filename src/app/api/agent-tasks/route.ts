@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -118,5 +118,34 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     console.error("Failed to update agent task:", error);
     return NextResponse.json({ error: "Failed to update agent task" }, { status: 500 });
+  }
+}
+
+// Cancel all running/queued tasks for a project
+export async function DELETE(req: NextRequest) {
+  const authResult = await requireAuth(req);
+  if (authResult instanceof NextResponse) return authResult;
+  try {
+    const projectId = req.nextUrl.searchParams.get("projectId");
+    if (!projectId) {
+      return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+    }
+
+    const db = getDb();
+    const cancelled = await db
+      .update(agentTasks)
+      .set({ status: "cancelled", completedAt: new Date() })
+      .where(
+        and(
+          eq(agentTasks.projectId, projectId),
+          inArray(agentTasks.status, ["queued", "running"])
+        )
+      )
+      .returning({ id: agentTasks.id });
+
+    return NextResponse.json({ cancelled: cancelled.length });
+  } catch (error) {
+    console.error("Failed to cancel agent tasks:", error);
+    return NextResponse.json({ error: "Failed to cancel agent tasks" }, { status: 500 });
   }
 }
