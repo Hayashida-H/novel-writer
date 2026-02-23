@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
           send({ type: "agent_stream", agentType: step.agentType, text });
         });
 
-        // Save output to DB
+        // Save output to agent_tasks DB (always do this first)
         await db
           .update(agentTasks)
           .set({
@@ -246,33 +246,27 @@ export async function POST(req: NextRequest) {
           })
           .where(eq(agentTasks.id, taskRecord.id));
 
-        // Post-step actions based on agent type
-        if (step.agentType === "writer") {
-          await db
-            .update(chapters)
-            .set({
-              content: result.output.content,
-              wordCount: result.output.content.length,
-              status: "draft",
-              updatedAt: new Date(),
-            })
-            .where(eq(chapters.id, chapterId));
-        }
+        // Post-step actions: save chapter content (non-fatal — output is already in agent_tasks)
+        if (step.agentType === "writer" || step.agentType === "editor") {
+          try {
+            const content = step.agentType === "editor"
+              ? result.output.content.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim()
+              : result.output.content;
 
-        if (step.agentType === "editor") {
-          const cleanContent = result.output.content
-            .replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "")
-            .trim();
+            await db
+              .update(chapters)
+              .set({
+                content,
+                wordCount: content.length,
+                status: "draft",
+                updatedAt: new Date(),
+              })
+              .where(eq(chapters.id, chapterId));
 
-          await db
-            .update(chapters)
-            .set({
-              content: cleanContent,
-              wordCount: cleanContent.length,
-              status: "draft",
-              updatedAt: new Date(),
-            })
-            .where(eq(chapters.id, chapterId));
+            console.log(`[execute-step] Chapter ${chapterId} content updated (${content.length} chars) by ${step.agentType}`);
+          } catch (err) {
+            console.error(`[execute-step] Failed to update chapter content for ${step.agentType}:`, err);
+          }
         }
 
         if (step.agentType === "continuity_checker") {
@@ -293,6 +287,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        // Always send agent_complete — output is safely stored in agent_tasks
         send({
           type: "agent_complete",
           agentType: step.agentType,
@@ -300,14 +295,19 @@ export async function POST(req: NextRequest) {
         });
         close();
       } catch (error) {
-        await db
-          .update(agentTasks)
-          .set({
-            status: "failed",
-            completedAt: new Date(),
-            errorMessage: error instanceof Error ? error.message : "Unknown error",
-          })
-          .where(eq(agentTasks.id, taskRecord.id));
+        console.error(`[execute-step] Step ${step.agentType} failed:`, error);
+        try {
+          await db
+            .update(agentTasks)
+            .set({
+              status: "failed",
+              completedAt: new Date(),
+              errorMessage: error instanceof Error ? error.message : "Unknown error",
+            })
+            .where(eq(agentTasks.id, taskRecord.id));
+        } catch (dbErr) {
+          console.error("[execute-step] Failed to mark task as failed:", dbErr);
+        }
 
         send({
           type: "error",

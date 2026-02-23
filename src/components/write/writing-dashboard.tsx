@@ -38,6 +38,7 @@ import {
   ChevronRight,
   ListTree,
   Square,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 import { AGENT_LABELS, type AgentType } from "@/types/agent";
@@ -249,6 +250,25 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     }
   }, [projectId, refreshTasks]);
 
+  // Recover content from agent_tasks when chapter is empty but agents completed
+  const handleRecoverContent = useCallback(async (chapterId: string) => {
+    try {
+      const res = await fetch("/api/agents/recover-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, chapterId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChapters((prev) =>
+          prev.map((c) => (c.id === chapterId ? { ...c, content: data.chapter.content, wordCount: data.chapter.wordCount, status: data.chapter.status } : c))
+        );
+      }
+    } catch (error) {
+      console.error("Failed to recover content:", error);
+    }
+  }, [projectId]);
+
   // Step-by-step pipeline execution
   const executeStepByStep = useCallback(async (chapterId: string, startStep: number) => {
     setWritingChapterId(chapterId);
@@ -266,14 +286,25 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
         fetch(`/api/chapters?projectId=${projectId}`),
         fetch(`/api/agent-tasks?projectId=${projectId}`),
       ]);
-      if (chapRes.ok) setChapters(await chapRes.json());
+      let latestChapters: ChapterItem[] = [];
+      if (chapRes.ok) {
+        latestChapters = await chapRes.json();
+        setChapters(latestChapters);
+      }
       if (taskRes.ok) setTasks(await taskRes.json());
+
+      // Auto-recover content if chapter is empty after pipeline completion
+      const targetChapter = latestChapters.find((c) => c.id === chapterId);
+      if (targetChapter && !targetChapter.content) {
+        console.log("[dashboard] Chapter content empty after pipeline, auto-recovering...");
+        await handleRecoverContent(chapterId);
+      }
     } catch (error) {
       console.error("Step-by-step execution failed:", error);
     } finally {
       setWritingChapterId(null);
     }
-  }, [projectId, executeStep, refreshTasks]);
+  }, [projectId, executeStep, refreshTasks, handleRecoverContent]);
 
   // Start writing from scratch (all 7 steps)
   const handleWriteEpisode = useCallback(async (chapterId: string) => {
@@ -362,6 +393,9 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     const statusInfo = CHAPTER_STATUS_LABELS[chapter.status] || CHAPTER_STATUS_LABELS.outlined;
     const isWriting = writingChapterId === chapter.id;
     const canResume = hasResumableProgress(chapter.id, tasks);
+    const agentStatuses = getAgentStatusesForChapter(chapter.id, tasks);
+    const allAgentsCompleted = Array.from(agentStatuses.values()).every((s) => s === "completed");
+    const needsRecovery = allAgentsCompleted && !chapter.content;
     return (
       <Card key={chapter.id} className="transition-colors hover:bg-accent/50">
         <CardHeader className="py-2 px-3">
@@ -375,6 +409,17 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
               </CardTitle>
             </div>
             <div className="flex shrink-0 items-center gap-1">
+              {needsRecovery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 text-orange-600"
+                  onClick={(e) => { e.stopPropagation(); handleRecoverContent(chapter.id); }}
+                  title="コンテンツ復旧"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              )}
               {canResume && (
                 <Button
                   variant="ghost"
