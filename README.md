@@ -22,7 +22,7 @@ Claude APIを活用し、複数の専門AIエージェントが協調して小�
 | State管理 | Zustand |
 | アイコン | Lucide React |
 | フォント | Geist Sans / Mono, Noto Serif JP (リーダー用) |
-| デプロイ | Vercel / Railway / Fly.io (いずれも可) |
+| デプロイ | Vercel |
 
 ---
 
@@ -427,8 +427,33 @@ src/
 
 3. **開発サーバー起動**:
    ```bash
-   npm run dev
+   npm run dev           # http://localhost:3001 で起動（3000は別用途使用のため）
    ```
+
+### デプロイ戦略
+
+**本番: Vercel**
+- Next.js との最適統合、git push でプレビューデプロイ自動生成
+- 環境変数は Vercel ダッシュボード or CLI (`vercel env add`) で設定
+- Supabase の接続先はプロダクション用DBを使用
+
+```bash
+# 初回セットアップ
+npx vercel            # プロジェクトリンク＆初回デプロイ
+npx vercel env add ANTHROPIC_API_KEY
+npx vercel env add DATABASE_URL
+npx vercel env add NEXT_PUBLIC_SUPABASE_URL
+npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+# 以降のデプロイ
+npx vercel            # プレビューデプロイ
+npx vercel --prod     # 本番デプロイ
+```
+
+**レスポンシブ対応の優先度**:
+1. リーダービュー（Phase 4）— モバイルファースト必須。スマホで読んで指摘する核心機能
+2. ダッシュボード — タブレット程度の対応があると便利
+3. 管理画面（プロット/キャラ/世界観/エージェント設定）— PC前提でOK
 
 ### 重要な設計メモ
 
@@ -444,7 +469,7 @@ src/
 
 | コマンド | 説明 |
 |---|---|
-| `npm run dev` | 開発サーバー起動 (http://localhost:3000) |
+| `npm run dev` | 開発サーバー起動 (http://localhost:3001) |
 | `npm run build` | プロダクションビルド |
 | `npm run start` | プロダクションサーバー起動 |
 | `npm run lint` | ESLint実行 |
