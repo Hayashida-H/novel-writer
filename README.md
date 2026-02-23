@@ -81,55 +81,90 @@ src/
 │   │
 │   ├── p/[projectId]/
 │   │   ├── layout.tsx                    # プロジェクトレイアウト（サイドバー）
-│   │   ├── page.tsx                      # ダッシュボード
+│   │   ├── page.tsx                      # ダッシュボード（クイックリンク付き）
 │   │   ├── prepare/
 │   │   │   ├── chat/page.tsx             # Claudeとのチャット
 │   │   │   ├── plot/page.tsx             # プロット構造エディタ
 │   │   │   ├── characters/page.tsx       # キャラクター管理
-│   │   │   └── world/page.tsx            # 世界観設定
-│   │   ├── write/
-│   │   │   ├── page.tsx                  # 執筆ダッシュボード
-│   │   │   └── chapters/[chapterId]/     # 章詳細
-│   │   ├── review/
-│   │   │   ├── page.tsx                  # レビューハブ
-│   │   │   └── chapters/[chapterId]/     # モバイルリーダー＆アノテーション
-│   │   └── agents/page.tsx               # エージェント設定
+│   │   │   ├── world/page.tsx            # 世界観設定
+│   │   │   └── foreshadowing/page.tsx    # 伏線管理
+│   │   ├── write/page.tsx                # 執筆ダッシュボード
+│   │   ├── review/page.tsx               # レビューハブ
+│   │   ├── agents/page.tsx               # エージェント設定
+│   │   └── export/page.tsx               # エクスポート
 │   │
 │   └── api/
-│       └── projects/
-│           ├── route.ts                  # GET: 一覧 / POST: 作成
-│           └── [projectId]/route.ts      # GET / PUT / DELETE
+│       ├── projects/
+│       │   ├── route.ts                  # GET: 一覧 / POST: 作成
+│       │   └── [projectId]/route.ts      # GET / PUT / DELETE
+│       ├── chat/
+│       │   ├── route.ts                  # POST: ストリーミングチャット（SSE）
+│       │   └── sessions/
+│       │       ├── route.ts              # GET / POST: セッション管理
+│       │       └── [sessionId]/messages/route.ts  # GET: メッセージ一覧
+│       ├── characters/
+│       │   ├── route.ts                  # GET / POST / PUT / DELETE
+│       │   └── relationships/route.ts    # キャラクター関係性
+│       ├── chapters/route.ts             # GET / POST / PUT / DELETE
+│       ├── plot/route.ts                 # GET / POST / PUT / DELETE
+│       ├── world-settings/route.ts       # GET / POST / PUT / DELETE
+│       ├── annotations/route.ts          # GET / POST / PUT / DELETE
+│       ├── foreshadowing/route.ts        # GET / POST / PUT / DELETE
+│       ├── style-references/route.ts     # GET / POST / PUT / DELETE
+│       ├── agent-tasks/route.ts          # GET / POST / PUT
+│       ├── agents/configs/route.ts       # GET / POST / PUT
+│       └── export/route.ts              # GET: エクスポート
 │
 ├── components/
 │   ├── ui/                               # shadcn/ui コンポーネント (16個)
-│   │   ├── button.tsx, card.tsx, dialog.tsx, input.tsx,
-│   │   ├── textarea.tsx, badge.tsx, tabs.tsx, separator.tsx,
-│   │   ├── sheet.tsx, scroll-area.tsx, dropdown-menu.tsx,
-│   │   ├── avatar.tsx, popover.tsx, tooltip.tsx, select.tsx,
-│   │   └── label.tsx
+│   │   ├── button, card, dialog, input, textarea, badge, tabs,
+│   │   ├── separator, sheet, scroll-area, dropdown-menu,
+│   │   └── avatar, popover, tooltip, select, label
 │   ├── layout/
 │   │   ├── sidebar.tsx                   # プロジェクトサイドバーナビゲーション
 │   │   └── header.tsx                    # ヘッダー（モバイルメニュー付き）
-│   ├── project/                          # (Phase 2〜)
-│   ├── chat/                             # (Phase 2)
-│   ├── preparation/                      # (Phase 2)
-│   ├── writing/                          # (Phase 3)
-│   ├── review/                           # (Phase 4)
-│   └── agents/                           # (Phase 3)
+│   ├── chat/
+│   │   ├── chat-container.tsx            # チャット全体制御（セッション管理・ストリーミング）
+│   │   ├── chat-messages.tsx             # メッセージ表示（バブルUI・ストリーミング対応）
+│   │   ├── chat-input.tsx                # メッセージ入力（Enter送信・Shift+Enter改行）
+│   │   └── session-list.tsx              # セッション一覧（トピック別アイコン付き）
+│   ├── plot/
+│   │   └── plot-editor.tsx               # プロット構造エディタ
+│   ├── characters/
+│   │   └── character-list.tsx            # キャラクター一覧＆編集
+│   ├── world/
+│   │   └── world-settings-list.tsx       # 世界観設定一覧＆編集
+│   ├── foreshadowing/
+│   │   └── foreshadowing-list.tsx        # 伏線管理
+│   ├── write/
+│   │   └── writing-dashboard.tsx         # 執筆ダッシュボード
+│   ├── review/
+│   │   └── review-hub.tsx                # レビューハブ
+│   └── agents/
+│       ├── agent-config-list.tsx          # エージェント設定一覧
+│       └── style-reference-list.tsx       # 文体参照管理
 │
 ├── lib/
 │   ├── db/
-│   │   ├── index.ts                      # Drizzle クライアント（遅延初期化）
-│   │   └── schema.ts                     # 全14テーブルのスキーマ定義
+│   │   ├── index.ts                      # Drizzle クライアント（遅延初期化・シングルトン）
+│   │   └── schema.ts                     # 全15テーブルのスキーマ定義
 │   ├── supabase/
 │   │   └── client.ts                     # Supabase クライアント
-│   ├── agents/                           # (Phase 3)
-│   │   ├── base-agent.ts                 # エージェント基底クラス
-│   │   ├── context-builder.ts            # コンテキスト組み立て
-│   │   ├── pipeline.ts                   # パイプライン制御
+│   ├── agents/
+│   │   ├── base-agent.ts                 # エージェント基底クラス（ストリーミング対応）
+│   │   ├── context-builder.ts            # プロジェクトコンテキスト組み立て
+│   │   ├── pipeline.ts                   # マルチエージェントパイプライン制御
 │   │   └── prompts/                      # 各エージェントのシステムプロンプト
-│   ├── claude/                           # (Phase 2-3)
-│   │   ├── client.ts                     # Anthropic SDK ラッパー
+│   │       ├── index.ts                  # 共通エクスポート＆デフォルト設定
+│   │       ├── coordinator.ts            # コーディネーター
+│   │       ├── plot-architect.ts         # プロット構成
+│   │       ├── character-manager.ts      # キャラクター管理
+│   │       ├── writer.ts                 # 執筆
+│   │       ├── editor.ts                 # 編集・校正
+│   │       ├── world-builder.ts          # 世界観構築
+│   │       └── continuity-checker.ts     # 整合性チェック
+│   ├── claude/
+│   │   ├── client.ts                     # Anthropic SDK ラッパー（ストリーミング対応）
 │   │   └── streaming.ts                  # SSEストリーミングユーティリティ
 │   └── utils.ts                          # shadcn/ui ユーティリティ (cn)
 │
@@ -138,15 +173,15 @@ src/
 │   ├── agent.ts                          # AgentType, StreamEvent, PipelinePlan
 │   └── annotation.ts                     # Annotation, AnnotationType
 │
-├── hooks/                                # (Phase 2〜)
-└── stores/                               # (Phase 4)
+├── hooks/                                # (未実装)
+└── stores/                               # (未実装)
 ```
 
 ---
 
 ## データベーススキーマ
 
-14テーブルで構成。`src/lib/db/schema.ts` で Drizzle ORM により定義。
+15テーブルで構成。`src/lib/db/schema.ts` で Drizzle ORM により定義。
 
 ### コアエンティティ
 
@@ -186,6 +221,13 @@ src/
 |---|---|---|
 | `chat_sessions` | チャットセッション | topic (plot/characters/world/general), is_committed |
 | `chat_messages` | チャットメッセージ | role, content, metadata |
+
+### 伏線＆文体
+
+| テーブル | 概要 | 主なカラム |
+|---|---|---|
+| `foreshadowing` | 伏線管理 | title, type (伏線/チェーホフの銃/モチーフ/ミスリード), status, planted/target_chapter, priority |
+| `style_references` | 文体参照 | title, sample_text, style_notes, is_active |
 
 ---
 
@@ -268,74 +310,59 @@ src/
 |---|---|---|---|
 | 1 | Next.js + Tailwind + TypeScript 初期化 | ✅ | プロジェクト基盤 |
 | 2 | shadcn/ui セットアップ | ✅ | 16 UIコンポーネント |
-| 3 | Drizzle ORM スキーマ定義 | ✅ | `src/lib/db/schema.ts` (14テーブル) |
+| 3 | Drizzle ORM スキーマ定義 | ✅ | `src/lib/db/schema.ts` (15テーブル) |
 | 4 | 型定義 | ✅ | `src/types/` (project, agent, annotation) |
 | 5 | 基本レイアウト | ✅ | サイドバー、ヘッダー、モバイルメニュー |
-| 6 | ページルーティング | ✅ | 12ルート (全ページ構造) |
+| 6 | ページルーティング | ✅ | 14ルート (全ページ構造) |
 | 7 | プロジェクト API | ✅ | CRUD (`/api/projects`) |
 | 8 | 新規プロジェクト作成UI | ✅ | ジャンル・構造タイプ選択フォーム |
 
-**残タスク**: Supabaseプロジェクト作成 → `.env.local` に接続情報設定 → `npm run db:push`
+### Phase 2: 準備フェーズ ✅ ほぼ完了
 
-### Phase 2: 準備フェーズ
+| # | タスク | 状態 | 成果物 |
+|---|---|---|---|
+| 9 | チャットUI＆ストリーミングAPI | ✅ | `components/chat/*` + `/api/chat` (SSEストリーミング) |
+| 10 | チャットセッション管理 | ✅ | トピック別（プロット/キャラ/世界観/一般）セッション作成・切替 |
+| 11 | プロジェクトコンテキスト自動注入 | ✅ | `context-builder.ts` — キャラ・プロット・世界観・伏線をClaudeに自動送信 |
+| 12 | プロットエディタ | ✅ | `plot-editor.tsx` + `/api/plot` |
+| 13 | キャラクター管理 | ✅ | `character-list.tsx` + `/api/characters` (関係性含む) |
+| 14 | 世界観設定 | ✅ | `world-settings-list.tsx` + `/api/world-settings` |
+| 15 | 伏線管理 | ✅ | `foreshadowing-list.tsx` + `/api/foreshadowing` |
+| 16 | チャットコミット機能 | ❌ | スキーマに `is_committed` / `committed_to` あり、ロジック未実装 |
 
-| # | タスク | 概要 |
-|---|---|---|
-| 7 | チャットUI＆ストリーミングAPI | Claude APIとのリアルタイムチャット。SSEでストリーミング応答 |
-| 8 | チャットコミット機能 | チャットで決めた内容をプロジェクト設定（プロット/キャラ/世界観）に構造化して保存 |
-| 9 | プロットエディタ | 起承転結タイムラインUI。プロットポイントをドラッグ＆ドロップで配置 |
-| 10 | キャラクター管理 | キャラクターカード一覧＋関係図ビジュアライゼーション |
-| 11 | 世界観設定 | カテゴリ別タブ（地理/魔法/文化/歴史等）で設定を管理 |
+### Phase 3: エージェントシステム ✅ バックエンド完了 / フロントエンド基盤完了
 
-**API追加予定**:
-- `POST /api/chat` - Claudeとのストリーミングチャット
-- `GET/POST /api/chat/sessions` - チャットセッション管理
-- `POST /api/chat/commit` - チャット結果をプロジェクトに反映
-- `GET/POST /api/projects/[id]/characters` - キャラクターCRUD
-- `GET/PUT /api/projects/[id]/plot` - プロット構造CRUD
-- `GET/POST /api/projects/[id]/world` - 世界設定CRUD
+| # | タスク | 状態 | 成果物 |
+|---|---|---|---|
+| 17 | BaseAgent＆ContextBuilder | ✅ | `base-agent.ts` + `context-builder.ts` |
+| 18 | システムプロンプト作成 (7エージェント) | ✅ | `prompts/` — 日本語小説に特化した専門プロンプト |
+| 19 | パイプライン実行エンジン | ✅ | `pipeline.ts` — ステップ依存関係・ストリーミング対応 |
+| 20 | エージェント設定ページ | ✅ | `agent-config-list.tsx` + `/api/agents/configs` |
+| 21 | 文体参照管理 | ✅ | `style-reference-list.tsx` + `/api/style-references` |
+| 22 | 執筆ダッシュボード | ✅ | `writing-dashboard.tsx` |
+| 23 | タスクキュー API | ✅ | `/api/agent-tasks` |
+| 24 | パイプライン公開APIエンドポイント | ❌ | パイプライン実行を外部から起動するAPIが未実装 |
+| 25 | 章サマリー自動生成 | ❌ | 章完了時のサマリー自動生成ロジック未実装 |
+| 26 | 一時停止/再開/キャンセル | ❌ | パイプラインの途中制御未実装 |
 
-### Phase 3: エージェントシステム
+### Phase 4: レビューシステム 🔧 UI基盤のみ
 
-| # | タスク | 概要 |
-|---|---|---|
-| 12 | BaseAgent＆ContextBuilder | エージェント基底クラス（Claude API呼び出し＋ストリーミング）、トークン予算に基づくコンテキスト組み立て |
-| 13 | システムプロンプト作成 | 7エージェント分の専門プロンプト設計。日本語小説に特化した指示 |
-| 14 | パイプライン実行 | SSEストリーミングで各エージェントの出力をリアルタイム表示 |
-| 15 | エージェント設定ページ | プロンプト・モデル・temperature等のカスタマイズUI |
-| 16 | 章サマリー自動生成 | 章完了時にClaude APIでbrief/detailedサマリーを生成・保存 |
-| 17 | 執筆ダッシュボード | 章一覧＋パイプラインステッパー可視化＋ストリーミング出力パネル |
-| 18 | 一時停止/再開/キャンセル | パイプライン実行中のユーザー介入制御 |
+| # | タスク | 状態 | 成果物 |
+|---|---|---|---|
+| 27 | レビューハブ | ✅ | `review-hub.tsx` |
+| 28 | アノテーション API | ✅ | `/api/annotations` |
+| 29 | ReaderView (書籍風レイアウト) | ❌ | Noto Serif JP設定済み、リーダーUI未実装 |
+| 30 | タップアノテーション＆ポップオーバー | ❌ | |
+| 31 | アノテーションストア (Zustand) | ❌ | |
+| 32 | バッチ送信＆編集エージェント連携 | ❌ | |
 
-**API追加予定**:
-- `POST /api/agents/execute` - パイプライン実行（SSEストリーム返却）
-- `GET /api/agents/status` - パイプライン状態（SSE）
-- `GET/PUT /api/agents/config` - エージェント設定CRUD
-- `GET/PUT /api/agents/tasks` - タスクキュー管理
-- `POST /api/projects/[id]/chapters` - 章CRUD
-- `GET /api/projects/[id]/chapters/[id]/versions` - バージョン履歴
+### Phase 5: 仕上げ 🔧 一部のみ
 
-### Phase 4: モバイルレビュー
-
-| # | タスク | 概要 |
-|---|---|---|
-| 19 | ReaderView | Noto Serif JPの書籍風レイアウト。ダークモード対応 |
-| 20 | AnnotatableParagraph＆Popover | タップで段落選択→コメント入力ポップオーバー |
-| 21 | アノテーションストア | Zustandでローカル即保存＋デバウンスDB永続化 |
-| 22 | バッチ送信＆編集エージェント連携 | 一括送信→編集エージェントが全指摘を処理 |
-| 23 | アノテーション位置復元 | anchor_textファジーマッチングで位置追跡 |
-
-**API追加予定**:
-- `GET/POST /api/review/annotations` - アノテーションCRUD
-- `POST /api/review/submit-batch` - バッチ送信→編集エージェント実行
-
-### Phase 5: 仕上げ
-
-| # | タスク | 概要 |
-|---|---|---|
-| 24 | ダッシュボード強化 | 進捗率、文字数統計、エージェント活動ログ |
-| 25 | エクスポート | Markdown / プレーンテキスト / (将来) EPUB 出力 |
-| 26 | レスポンシブ最終調整 | 全ページのモバイル対応チェック＆修正 |
+| # | タスク | 状態 | 成果物 |
+|---|---|---|---|
+| 33 | エクスポート | ✅ | `/api/export` + エクスポートページ |
+| 34 | ダッシュボード強化 | ❌ | 進捗率、統計、ログ表示 |
+| 35 | レスポンシブ最終調整 | ❌ | |
 
 ### Future: 認証＆マルチユーザー
 
@@ -343,6 +370,73 @@ src/
 |---|---|
 | Supabase Auth導入 | メール/パスワード認証、Row Level Security |
 | マルチユーザー対応 | プロジェクト共有、共同レビュー |
+| ミドルウェア | 認証チェック・APIガード（現在は未実装） |
+
+---
+
+## 実装済み API エンドポイント一覧
+
+| エンドポイント | メソッド | 概要 |
+|---|---|---|
+| `/api/projects` | GET / POST | プロジェクト一覧・作成 |
+| `/api/projects/[projectId]` | GET / PUT / DELETE | プロジェクト詳細・更新・削除 |
+| `/api/chat` | POST | Claude ストリーミングチャット（SSE） |
+| `/api/chat/sessions` | GET / POST | チャットセッション一覧・作成 |
+| `/api/chat/sessions/[sessionId]/messages` | GET | メッセージ履歴取得 |
+| `/api/characters` | GET / POST / PUT / DELETE | キャラクターCRUD |
+| `/api/characters/relationships` | GET / POST / PUT / DELETE | キャラクター関係性 |
+| `/api/chapters` | GET / POST / PUT / DELETE | 章CRUD |
+| `/api/plot` | GET / POST / PUT / DELETE | プロット構造CRUD |
+| `/api/world-settings` | GET / POST / PUT / DELETE | 世界観設定CRUD |
+| `/api/annotations` | GET / POST / PUT / DELETE | アノテーションCRUD |
+| `/api/foreshadowing` | GET / POST / PUT / DELETE | 伏線CRUD |
+| `/api/style-references` | GET / POST / PUT / DELETE | 文体参照CRUD |
+| `/api/agent-tasks` | GET / POST / PUT | エージェントタスクキュー |
+| `/api/agents/configs` | GET / POST / PUT | エージェント設定 |
+| `/api/export` | GET | エクスポート |
+
+---
+
+## 未実装 API（今後追加予定）
+
+| エンドポイント | 概要 |
+|---|---|
+| `POST /api/chat/commit` | チャット会話の内容をプロジェクト設定に構造化保存 |
+| `POST /api/agents/execute` | パイプライン実行（SSEストリーム返却） |
+| `GET /api/agents/status` | パイプライン実行状態（SSE） |
+
+---
+
+## 現在の状態と次のステップ
+
+### 動かすための前提条件
+
+1. **`.env.local` の作成**（リポジトリに含まれていない）:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
+   DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+   ANTHROPIC_API_KEY=sk-ant-...
+   ```
+
+2. **DBマイグレーション実行**（`drizzle/` ディレクトリは未生成）:
+   ```bash
+   npm install
+   npm run db:push      # 開発時はこれだけでOK
+   ```
+
+3. **開発サーバー起動**:
+   ```bash
+   npm run dev
+   ```
+
+### 重要な設計メモ
+
+**チャットのコンテキスト自動注入**: チャットAPIはセッションのプロジェクトIDから自動的にキャラクター・プロット・世界観・伏線・既存章の情報をClaude のシステムプロンプトに注入する。会話が進むほどClaudeがプロジェクト全体を理解した上で回答する設計。
+
+**チャットコミット機能の欠落**: 現在、Claudeとの会話で決めた内容（キャラ設定、プロット展開など）を手動でUIの各管理画面から再入力する必要がある。スキーマには `chat_sessions.is_committed` / `committed_to` が用意済みだが、会話→構造化データ→DB保存のフローが未実装。
+
+**ハイブリッド運用の検討**: 初期設定（プロット骨格・主要キャラ・世界観）はClaude Code上で対話的に作成し、JSONシードデータとしてDB投入する方式も有効。UIチャットは執筆フェーズ以降の継続的な相談に活用する想定。
 
 ---
 
@@ -366,7 +460,7 @@ src/
 | フェーズ | 検証内容 |
 |---|---|
 | Phase 1 | `npm run build` 成功、全ルートのページ表示確認 |
-| Phase 2 | プロジェクト作成 → チャットでプロット/キャラ構築 → コミットしてDB保存確認 |
+| Phase 2 | プロジェクト作成 → チャットでプロット/キャラ構築 → 各管理画面でのCRUD確認 |
 | Phase 3 | エージェントパイプライン起動 → SSEストリーミングで各エージェント出力確認 |
 | Phase 4 | モバイルブラウザでレビュー画面 → タップアノテーション → バッチ送信 → 編集反映確認 |
 | Phase 5 | 複数章生成後、整合性チェッカーの矛盾検出、エクスポート動作確認 |
