@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { chapters, agentTasks } from "@/lib/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and, inArray } from "drizzle-orm";
 import { getClaudeClient } from "@/lib/claude/client";
 import { AgentPipeline } from "@/lib/agents/pipeline";
 import { generateChapterSummary } from "@/lib/agents/summary";
@@ -182,6 +182,18 @@ export async function POST(req: NextRequest) {
             const client = getClaudeClient();
             const pipeline = new AgentPipeline(client);
             const steps = buildWritingPipeline(chapter.chapterNumber);
+
+            // Cancel stale running/queued tasks for this chapter
+            await db
+              .update(agentTasks)
+              .set({ status: "cancelled", completedAt: new Date() })
+              .where(
+                and(
+                  eq(agentTasks.projectId, projectId),
+                  eq(agentTasks.chapterId, chapter.id),
+                  inArray(agentTasks.status, ["queued", "running"])
+                )
+              );
 
             // Create task records
             for (const step of steps) {
