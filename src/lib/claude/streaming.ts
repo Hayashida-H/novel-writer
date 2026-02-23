@@ -13,16 +13,18 @@ export function createSSEStream(): {
   const stream = new ReadableStream({
     start(c) {
       controller = c;
-      // Send heartbeat every 15 seconds to prevent browser/proxy timeout
+      // Send heartbeat as data event every 10s to keep proxy/browser alive
+      // Using data: (not SSE comment) to ensure Vercel proxy flushes it
       heartbeatInterval = setInterval(() => {
         if (!controller) return;
         try {
-          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+          controller.enqueue(
+            encoder.encode(`data: {"type":"heartbeat"}\n\n`)
+          );
         } catch {
-          // Controller already closed
           if (heartbeatInterval) clearInterval(heartbeatInterval);
         }
-      }, 15_000);
+      }, 10_000);
     },
     cancel() {
       if (heartbeatInterval) clearInterval(heartbeatInterval);
