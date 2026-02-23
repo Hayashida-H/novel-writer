@@ -61,7 +61,7 @@ npm run db:studio    # Drizzle Studio（DBブラウザ）
 npm run dev
 ```
 
-http://localhost:3000 でアクセス。
+http://localhost:3001 でアクセス（ポート3000は別用途のため）。
 
 ---
 
@@ -87,7 +87,9 @@ src/
 │   │   │   ├── world/page.tsx            # 世界観設定
 │   │   │   └── foreshadowing/page.tsx    # 伏線管理
 │   │   ├── write/page.tsx                # 執筆ダッシュボード
-│   │   ├── review/page.tsx               # レビューハブ
+│   │   ├── review/
+│   │   │   ├── page.tsx                  # レビューハブ
+│   │   │   └── chapters/[chapterId]/page.tsx  # モバイルリーダービュー
 │   │   ├── agents/page.tsx               # エージェント設定
 │   │   └── export/page.tsx               # エクスポート
 │   │
@@ -110,7 +112,12 @@ src/
 │       ├── foreshadowing/route.ts        # GET / POST / PUT / DELETE
 │       ├── style-references/route.ts     # GET / POST / PUT / DELETE
 │       ├── agent-tasks/route.ts          # GET / POST / PUT
-│       ├── agents/configs/route.ts       # GET / POST / PUT
+│       ├── agents/
+│       │   ├── configs/route.ts          # GET / POST / PUT: エージェント設定
+│       │   ├── execute/route.ts          # POST: パイプライン実行（SSE）
+│       │   └── status/route.ts           # GET / POST: パイプライン状態＆制御
+│       ├── review/
+│       │   └── submit-batch/route.ts     # POST: アノテーション一括送信→AI修正（SSE）
 │       └── export/route.ts              # GET: エクスポート
 │
 ├── components/
@@ -137,7 +144,8 @@ src/
 │   ├── write/
 │   │   └── writing-dashboard.tsx         # 執筆ダッシュボード
 │   ├── review/
-│   │   └── review-hub.tsx                # レビューハブ
+│   │   ├── review-hub.tsx                # レビューハブ（章リーダーへのリンク付き）
+│   │   └── reader-view.tsx               # モバイルリーダービュー（書籍風・タップアノテーション）
 │   └── agents/
 │       ├── agent-config-list.tsx          # エージェント設定一覧
 │       └── style-reference-list.tsx       # 文体参照管理
@@ -149,7 +157,8 @@ src/
 │   ├── agents/
 │   │   ├── base-agent.ts                 # エージェント基底クラス（ストリーミング対応）
 │   │   ├── context-builder.ts            # プロジェクトコンテキスト組み立て
-│   │   ├── pipeline.ts                   # マルチエージェントパイプライン制御
+│   │   ├── pipeline.ts                   # マルチエージェントパイプライン制御（pause/resume/cancel対応）
+│   │   ├── summary.ts                    # 章サマリー自動生成（brief/detailed）
 │   │   └── prompts/                      # 各エージェントのシステムプロンプト
 │   │       ├── index.ts                  # 共通エクスポート＆デフォルト設定
 │   │       ├── coordinator.ts            # コーディネーター
@@ -162,6 +171,9 @@ src/
 │   ├── claude/
 │   │   ├── client.ts                     # Anthropic SDK ラッパー（ストリーミング対応）
 │   │   └── streaming.ts                  # SSEストリーミングユーティリティ
+│   ├── export/
+│   │   ├── markdown.ts                   # Markdown エクスポート
+│   │   └── plaintext.ts                  # プレーンテキスト エクスポート
 │   └── utils.ts                          # shadcn/ui ユーティリティ (cn)
 │
 ├── types/
@@ -170,7 +182,8 @@ src/
 │   └── annotation.ts                     # Annotation, AnnotationType
 │
 ├── hooks/                                # (未実装)
-└── stores/                               # (未実装)
+└── stores/
+    └── annotation-store.ts               # Zustand アノテーションストア（ローカル即保存・同期管理）
 ```
 
 ---
@@ -326,31 +339,31 @@ src/
 | 15 | 伏線管理 | ✅ | `foreshadowing-list.tsx` + `/api/foreshadowing` |
 | 16 | チャットコミット機能 | ❌ | スキーマに `is_committed` / `committed_to` あり、ロジック未実装 |
 
-### Phase 3: エージェントシステム ✅ バックエンド完了 / フロントエンド基盤完了
+### Phase 3: エージェントシステム ✅ 完了
 
 | # | タスク | 状態 | 成果物 |
 |---|---|---|---|
 | 17 | BaseAgent＆ContextBuilder | ✅ | `base-agent.ts` + `context-builder.ts` |
 | 18 | システムプロンプト作成 (7エージェント) | ✅ | `prompts/` — 日本語小説に特化した専門プロンプト |
-| 19 | パイプライン実行エンジン | ✅ | `pipeline.ts` — ステップ依存関係・ストリーミング対応 |
+| 19 | パイプライン実行エンジン | ✅ | `pipeline.ts` — ステップ依存関係・ストリーミング・pause/resume/cancel 対応 |
 | 20 | エージェント設定ページ | ✅ | `agent-config-list.tsx` + `/api/agents/configs` |
 | 21 | 文体参照管理 | ✅ | `style-reference-list.tsx` + `/api/style-references` |
 | 22 | 執筆ダッシュボード | ✅ | `writing-dashboard.tsx` |
 | 23 | タスクキュー API | ✅ | `/api/agent-tasks` |
-| 24 | パイプライン公開APIエンドポイント | ❌ | パイプライン実行を外部から起動するAPIが未実装 |
-| 25 | 章サマリー自動生成 | ❌ | 章完了時のサマリー自動生成ロジック未実装 |
-| 26 | 一時停止/再開/キャンセル | ❌ | パイプラインの途中制御未実装 |
+| 24 | パイプライン実行API | ✅ | `POST /api/agents/execute` — SSE ストリーミング、write/edit/custom モード |
+| 25 | 章サマリー自動生成 | ✅ | `lib/agents/summary.ts` — 章完了時に brief/detailed サマリーを Claude で自動生成 |
+| 26 | 一時停止/再開/キャンセル | ✅ | `GET/POST /api/agents/status` — グローバルパイプラインレジストリで制御 |
 
-### Phase 4: レビューシステム 🔧 UI基盤のみ
+### Phase 4: レビューシステム ✅ 完了
 
 | # | タスク | 状態 | 成果物 |
 |---|---|---|---|
-| 27 | レビューハブ | ✅ | `review-hub.tsx` |
+| 27 | レビューハブ | ✅ | `review-hub.tsx` — 章リーダーへのリンク付き |
 | 28 | アノテーション API | ✅ | `/api/annotations` |
-| 29 | ReaderView (書籍風レイアウト) | ❌ | Noto Serif JP設定済み、リーダーUI未実装 |
-| 30 | タップアノテーション＆ポップオーバー | ❌ | |
-| 31 | アノテーションストア (Zustand) | ❌ | |
-| 32 | バッチ送信＆編集エージェント連携 | ❌ | |
+| 29 | ReaderView (書籍風レイアウト) | ✅ | `reader-view.tsx` — max-width 640px、ダークモード、フォントサイズ調整 |
+| 30 | タップアノテーション＆ポップオーバー | ✅ | 段落タップ → インラインポップオーバー、種別選択 (コメント/問題/提案/称賛) |
+| 31 | アノテーションストア (Zustand) | ✅ | `stores/annotation-store.ts` — ローカル即保存、未同期管理 |
+| 32 | バッチ送信＆編集エージェント連携 | ✅ | `POST /api/review/submit-batch` — 全指摘を編集エージェントに一括送信→章修正 |
 
 ### Phase 5: 仕上げ 🔧 一部のみ
 
@@ -389,6 +402,9 @@ src/
 | `/api/style-references` | GET / POST / PUT / DELETE | 文体参照CRUD |
 | `/api/agent-tasks` | GET / POST / PUT | エージェントタスクキュー |
 | `/api/agents/configs` | GET / POST / PUT | エージェント設定 |
+| `/api/agents/execute` | POST | パイプライン実行（SSEストリーム、write/edit/custom モード） |
+| `/api/agents/status` | GET / POST | パイプライン状態取得・制御（pause/resume/cancel） |
+| `/api/review/submit-batch` | POST | アノテーション一括送信→編集エージェント修正（SSE） |
 | `/api/export` | GET | エクスポート |
 
 ---
@@ -398,8 +414,6 @@ src/
 | エンドポイント | 概要 |
 |---|---|
 | `POST /api/chat/commit` | チャット会話の内容をプロジェクト設定に構造化保存 |
-| `POST /api/agents/execute` | パイプライン実行（SSEストリーム返却） |
-| `GET /api/agents/status` | パイプライン実行状態（SSE） |
 
 ---
 

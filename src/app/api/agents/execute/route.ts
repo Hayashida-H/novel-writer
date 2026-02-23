@@ -173,6 +173,9 @@ export async function POST(req: NextRequest) {
     // Create SSE stream
     const { stream, send, close } = createSSEStream();
 
+    // Send pipelineId immediately so client can control it
+    send({ type: "pipeline_plan", plan: { steps: [] }, message: pipeline.pipelineId });
+
     // Run pipeline in the background
     (async () => {
       try {

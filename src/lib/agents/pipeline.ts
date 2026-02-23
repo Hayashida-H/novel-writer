@@ -18,13 +18,81 @@ export interface PipelineConfig {
   onEvent?: (event: StreamEvent) => void;
 }
 
+export type PipelineState = "idle" | "running" | "paused" | "cancelled" | "completed" | "error";
+
+// Global registry of active pipelines for control from external API
+const activePipelines = new Map<string, AgentPipeline>();
+
+export function getPipeline(pipelineId: string): AgentPipeline | undefined {
+  return activePipelines.get(pipelineId);
+}
+
+export function getActivePipelineIds(): string[] {
+  return Array.from(activePipelines.keys());
+}
+
 export class AgentPipeline {
   private client: ClaudeClient;
   private agents: Map<AgentType, BaseAgent>;
+  private _state: PipelineState = "idle";
+  private _pipelineId: string;
+  private pauseResolver: (() => void) | null = null;
+  private currentStepIndex: number = 0;
+  private totalSteps: number = 0;
 
   constructor(client: ClaudeClient) {
     this.client = client;
     this.agents = new Map();
+    this._pipelineId = `pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  }
+
+  get state(): PipelineState {
+    return this._state;
+  }
+
+  get pipelineId(): string {
+    return this._pipelineId;
+  }
+
+  get progress(): { current: number; total: number } {
+    return { current: this.currentStepIndex, total: this.totalSteps };
+  }
+
+  pause(): void {
+    if (this._state === "running") {
+      this._state = "paused";
+    }
+  }
+
+  resume(): void {
+    if (this._state === "paused" && this.pauseResolver) {
+      this._state = "running";
+      this.pauseResolver();
+      this.pauseResolver = null;
+    }
+  }
+
+  cancel(): void {
+    if (this._state === "running" || this._state === "paused") {
+      this._state = "cancelled";
+      // If paused, unblock the wait so the loop can exit
+      if (this.pauseResolver) {
+        this.pauseResolver();
+        this.pauseResolver = null;
+      }
+    }
+  }
+
+  private isCancelled(): boolean {
+    return this._state === "cancelled";
+  }
+
+  private async waitWhilePaused(onEvent?: (event: StreamEvent) => void): Promise<void> {
+    if (this._state !== "paused") return;
+    onEvent?.({ type: "pipeline_paused" });
+    await new Promise<void>((resolve) => {
+      this.pauseResolver = resolve;
+    });
   }
 
   private getAgent(agentType: AgentType): BaseAgent {
@@ -39,45 +107,78 @@ export class AgentPipeline {
     const results: AgentOutput[] = [];
     const stepOutputs: Map<number, string> = new Map();
 
-    const projectContext = await buildProjectContext(projectId);
-    const contextPrompt = formatContextForPrompt(projectContext);
+    this._state = "running";
+    this.totalSteps = steps.length;
+    this.currentStepIndex = 0;
 
-    const plan: PipelinePlan = {
-      steps: steps.map((s) => ({
-        agentType: s.agentType,
-        taskType: s.taskType,
-        description: s.description,
-      })),
-    };
+    // Register in global registry
+    activePipelines.set(this._pipelineId, this);
 
-    onEvent?.({ type: "pipeline_plan", plan });
+    try {
+      const projectContext = await buildProjectContext(projectId);
+      const contextPrompt = formatContextForPrompt(projectContext);
 
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
-      const agent = this.getAgent(step.agentType);
-      const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
+      const plan: PipelinePlan = {
+        steps: steps.map((s) => ({
+          agentType: s.agentType,
+          taskType: s.taskType,
+          description: s.description,
+        })),
+      };
 
-      // Inject project context and previous step outputs into messages
-      const enrichedMessages = this.enrichMessages(
-        step.messages,
-        contextPrompt,
-        step.dependsOn,
-        stepOutputs
-      );
+      onEvent?.({ type: "pipeline_plan", plan });
 
-      onEvent?.({ type: "agent_start", agentType: step.agentType });
+      for (let i = 0; i < steps.length; i++) {
+        // Check for cancellation (use getter to avoid TS flow narrowing)
+        if (this.state === "cancelled") {
+          onEvent?.({ type: "error", message: "パイプラインがキャンセルされました" });
+          break;
+        }
 
-      const result = await agent.execute(agentContext, enrichedMessages, (text) => {
-        onEvent?.({ type: "agent_stream", agentType: step.agentType, text });
-      });
+        // Check for pause
+        if (this.state === "paused") {
+          await this.waitWhilePaused(onEvent);
+          // After resume, check if cancelled during pause
+          if (this.isCancelled()) {
+            onEvent?.({ type: "error", message: "パイプラインがキャンセルされました" });
+            break;
+          }
+        }
 
-      stepOutputs.set(i, result.rawContent);
-      results.push(result.output);
+        this.currentStepIndex = i;
+        const step = steps[i];
+        const agent = this.getAgent(step.agentType);
+        const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
 
-      onEvent?.({ type: "agent_complete", agentType: step.agentType, output: result.output });
+        const enrichedMessages = this.enrichMessages(
+          step.messages,
+          contextPrompt,
+          step.dependsOn,
+          stepOutputs
+        );
+
+        onEvent?.({ type: "agent_start", agentType: step.agentType });
+
+        const result = await agent.execute(agentContext, enrichedMessages, (text) => {
+          onEvent?.({ type: "agent_stream", agentType: step.agentType, text });
+        });
+
+        stepOutputs.set(i, result.rawContent);
+        results.push(result.output);
+
+        onEvent?.({ type: "agent_complete", agentType: step.agentType, output: result.output });
+      }
+
+      if (this.state !== "cancelled") {
+        this._state = "completed";
+        onEvent?.({ type: "pipeline_complete" });
+      }
+    } catch (error) {
+      this._state = "error";
+      throw error;
+    } finally {
+      activePipelines.delete(this._pipelineId);
     }
-
-    onEvent?.({ type: "pipeline_complete" });
 
     return results;
   }
