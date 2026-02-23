@@ -6,17 +6,29 @@ export function createSSEStream(): {
   close: () => void;
 } {
   let controller: ReadableStreamDefaultController | null = null;
+  let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     start(c) {
       controller = c;
+      // Send heartbeat every 15 seconds to prevent browser/proxy timeout
+      heartbeatInterval = setInterval(() => {
+        if (!controller) return;
+        try {
+          controller.enqueue(encoder.encode(": heartbeat\n\n"));
+        } catch {
+          // Controller already closed
+          if (heartbeatInterval) clearInterval(heartbeatInterval);
+        }
+      }, 15_000);
     },
     cancel() {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
       controller = null;
     },
   });
-
-  const encoder = new TextEncoder();
 
   function send(event: StreamEvent) {
     if (!controller) return;
@@ -25,6 +37,7 @@ export function createSSEStream(): {
   }
 
   function close() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (!controller) return;
     controller.enqueue(encoder.encode("data: [DONE]\n\n"));
     controller.close();

@@ -138,6 +138,15 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
       async start(controller) {
+        // Heartbeat every 15s to prevent browser/proxy timeout
+        const heartbeatInterval = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": heartbeat\n\n"));
+          } catch {
+            clearInterval(heartbeatInterval);
+          }
+        }, 15_000);
+
         function send(event: StreamEvent & Record<string, unknown>) {
           const data = JSON.stringify(event);
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
@@ -284,6 +293,7 @@ export async function POST(req: NextRequest) {
             totalWords,
           });
 
+          clearInterval(heartbeatInterval);
           controller.close();
         } catch (error) {
           console.error("Bulk write error:", error);
@@ -291,6 +301,7 @@ export async function POST(req: NextRequest) {
             type: "error",
             message: error instanceof Error ? error.message : "一括執筆に失敗しました",
           });
+          clearInterval(heartbeatInterval);
           controller.close();
         }
       },
