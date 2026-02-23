@@ -1,4 +1,5 @@
 import { Header } from "@/components/layout/header";
+import { ChatContainer } from "@/components/chat/chat-container";
 
 export default async function ChatPage({
   params,
@@ -10,14 +11,8 @@ export default async function ChatPage({
   return (
     <div className="flex h-screen flex-col">
       <Header projectId={projectId} title="チャット" />
-      <div className="flex flex-1 items-center justify-center">
-        <div className="text-center text-muted-foreground">
-          <p className="text-lg font-medium">準備チャット</p>
-          <p className="mt-1 text-sm">
-            Claudeと会話してプロット・キャラクター・世界観を構築します
-          </p>
-          <p className="mt-4 text-xs">Phase 2で実装予定</p>
-        </div>
+      <div className="flex-1 overflow-hidden">
+        <ChatContainer projectId={projectId} />
       </div>
     </div>
   );

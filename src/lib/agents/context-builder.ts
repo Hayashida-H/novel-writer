@@ -1,4 +1,4 @@
-import { db } from "@/lib/db";
+import { getDb } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import {
   chapters,
@@ -31,6 +31,7 @@ export interface ProjectContext {
 }
 
 export async function buildProjectContext(projectId: string): Promise<ProjectContext> {
+  const db = getDb();
   const [
     projectCharacters,
     projectPlot,
@@ -128,6 +129,7 @@ export async function buildAgentContext(
   agentType: AgentType,
   chapterId?: string
 ): Promise<AgentContext> {
+  const db = getDb();
   const configRows = await db
     .select()
     .from(agentConfigs)
