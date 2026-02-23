@@ -18,7 +18,7 @@ Claude APIを活用し、複数の専門AIエージェントが協調して小�
 | Styling | Tailwind CSS v4 |
 | UIコンポーネント | shadcn/ui |
 | AI | Claude API (@anthropic-ai/sdk) |
-| DB | PostgreSQL (Supabase) + Drizzle ORM |
+| DB | PostgreSQL (Neon Serverless) + Drizzle ORM |
 | State管理 | Zustand |
 | アイコン | Lucide React |
 | フォント | Geist Sans / Mono, Noto Serif JP (リーダー用) |
@@ -36,13 +36,11 @@ npm install
 
 ### 2. 環境変数の設定
 
-`.env.local` を編集:
+`.env.local` を作成:
 
 ```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+# Neon (Vercelダッシュボードから Neon 連携時に自動設定される)
+DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
 
 # Anthropic
 ANTHROPIC_API_KEY=sk-ant-...
@@ -146,10 +144,8 @@ src/
 │
 ├── lib/
 │   ├── db/
-│   │   ├── index.ts                      # Drizzle クライアント（遅延初期化・シングルトン）
+│   │   ├── index.ts                      # Drizzle クライアント（Neon serverless・遅延初期化）
 │   │   └── schema.ts                     # 全15テーブルのスキーマ定義
-│   ├── supabase/
-│   │   └── client.ts                     # Supabase クライアント
 │   ├── agents/
 │   │   ├── base-agent.ts                 # エージェント基底クラス（ストリーミング対応）
 │   │   ├── context-builder.ts            # プロジェクトコンテキスト組み立て
@@ -368,7 +364,7 @@ src/
 
 | タスク | 概要 |
 |---|---|
-| Supabase Auth導入 | メール/パスワード認証、Row Level Security |
+| 認証導入 | NextAuth.js / Clerk 等。メール/OAuth 認証 |
 | マルチユーザー対応 | プロジェクト共有、共同レビュー |
 | ミドルウェア | 認証チェック・APIガード（現在は未実装） |
 
@@ -413,9 +409,7 @@ src/
 
 1. **`.env.local` の作成**（リポジトリに含まれていない）:
    ```env
-   NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-   DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+   DATABASE_URL=postgresql://user:pass@ep-xxx.us-east-2.aws.neon.tech/neondb?sslmode=require
    ANTHROPIC_API_KEY=sk-ant-...
    ```
 
@@ -432,18 +426,16 @@ src/
 
 ### デプロイ戦略
 
-**本番: Vercel**
-- Next.js との最適統合、git push でプレビューデプロイ自動生成
-- 環境変数は Vercel ダッシュボード or CLI (`vercel env add`) で設定
-- Supabase の接続先はプロダクション用DBを使用
+**本番: Vercel + Neon**
+- Vercel ダッシュボードから Neon 統合を有効化 → `DATABASE_URL` が自動設定される
+- プレビューデプロイごとに Neon ブランチ DB を自動作成可能（本番データを汚さない）
+- `ANTHROPIC_API_KEY` のみ手動で環境変数に追加
 
 ```bash
 # 初回セットアップ
-npx vercel            # プロジェクトリンク＆初回デプロイ
-npx vercel env add ANTHROPIC_API_KEY
-npx vercel env add DATABASE_URL
-npx vercel env add NEXT_PUBLIC_SUPABASE_URL
-npx vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
+npx vercel                              # プロジェクトリンク＆初回デプロイ
+# → Vercel ダッシュボード > Storage > Neon で DB 連携（DATABASE_URL 自動設定）
+npx vercel env add ANTHROPIC_API_KEY    # Claude API キーのみ手動追加
 
 # 以降のデプロイ
 npx vercel            # プレビューデプロイ
