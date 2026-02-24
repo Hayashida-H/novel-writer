@@ -58,6 +58,8 @@ interface ChapterItem {
   wordCount: number | null;
   status: string;
   arcId: string | null;
+  summaryBrief: string | null;
+  summaryDetailed: string | null;
 }
 
 interface TaskItem {
@@ -610,6 +612,22 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
                 <div className="rounded-lg bg-muted p-3">
                   <p className="text-xs font-medium text-muted-foreground">あらすじ</p>
                   <p className="mt-1 text-sm">{selectedChapter.synopsis}</p>
+                </div>
+              )}
+              {(selectedChapter.summaryBrief || selectedChapter.summaryDetailed) && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-950">
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-300">要約（執筆後に自動生成）</p>
+                  <p className="mt-1 text-sm text-blue-900 dark:text-blue-100">
+                    {selectedChapter.summaryBrief}
+                  </p>
+                  {selectedChapter.summaryDetailed && selectedChapter.summaryDetailed !== selectedChapter.summaryBrief && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs text-blue-600 dark:text-blue-400">詳細要約を表示</summary>
+                      <p className="mt-1 text-sm text-blue-800 dark:text-blue-200 whitespace-pre-wrap">
+                        {selectedChapter.summaryDetailed}
+                      </p>
+                    </details>
+                  )}
                 </div>
               )}
               <div>

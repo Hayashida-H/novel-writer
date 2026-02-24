@@ -177,6 +177,12 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
         body: JSON.stringify({
           projectId,
           mode: "custom",
+          formatOptions: {
+            includePlotPoints: false,
+            includeStyleReferences: false,
+            includeChapterSummaries: false,
+            includeChapterSynopses: false,
+          },
           customSteps: [
             {
               agentType: "continuity_checker",

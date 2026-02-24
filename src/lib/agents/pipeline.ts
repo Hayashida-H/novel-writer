@@ -1,6 +1,7 @@
 import type { AgentType, StreamEvent, AgentOutput, PipelinePlan } from "@/types/agent";
 import { BaseAgent } from "./base-agent";
-import { buildAgentContext, buildProjectContext, formatContextForPrompt } from "./context-builder";
+import { buildAgentContext, buildProjectContext, buildChapterContext, formatContextForPrompt } from "./context-builder";
+import type { FormatContextOptions } from "./context-builder";
 import type { ClaudeClient, ClaudeMessage } from "@/lib/claude/client";
 
 export interface PipelineStep {
@@ -18,6 +19,8 @@ export interface PipelineConfig {
   onEvent?: (event: StreamEvent) => void;
   /** Pre-loaded outputs from previously completed steps (key = step index). Steps with pre-loaded outputs will be skipped. */
   preloadedOutputs?: Map<number, string>;
+  /** Options to control which sections are included in the context */
+  formatOptions?: FormatContextOptions;
 }
 
 export type PipelineState = "idle" | "running" | "paused" | "cancelled" | "completed" | "error";
@@ -105,7 +108,7 @@ export class AgentPipeline {
   }
 
   async execute(config: PipelineConfig): Promise<AgentOutput[]> {
-    const { projectId, chapterId, steps, onEvent, preloadedOutputs } = config;
+    const { projectId, chapterId, steps, onEvent, preloadedOutputs, formatOptions } = config;
     const results: AgentOutput[] = [];
     const stepOutputs: Map<number, string> = new Map();
 
@@ -125,7 +128,14 @@ export class AgentPipeline {
 
     try {
       const projectContext = await buildProjectContext(projectId);
-      const contextPrompt = formatContextForPrompt(projectContext);
+
+      // Build chapter-specific context when writing a specific chapter
+      let chapterCtx;
+      if (chapterId) {
+        chapterCtx = await buildChapterContext(projectId, chapterId, projectContext.plotPoints);
+      }
+
+      const contextPrompt = formatContextForPrompt(projectContext, chapterCtx, formatOptions);
 
       const plan: PipelinePlan = {
         steps: steps.map((s) => ({

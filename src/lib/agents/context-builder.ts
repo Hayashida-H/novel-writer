@@ -20,7 +20,7 @@ export interface ProjectContext {
   plotSynopsis: string | null;
   plotPoints: { id: string; title: string; description: string; act: string }[];
   worldSettings: { category: string; title: string; content: string }[];
-  previousChapters: { chapterNumber: number; title: string | null; summaryBrief: string | null }[];
+  previousChapters: { chapterNumber: number; title: string | null; synopsis: string | null; summaryBrief: string | null }[];
   activeForeshadowing: {
     title: string;
     description: string;
@@ -30,6 +30,14 @@ export interface ProjectContext {
   }[];
   styleReferences: { title: string; styleNotes: string | null; sampleText: string | null }[];
   glossaryTerms: { term: string; reading: string | null; category: string | null; description: string }[];
+}
+
+/** Options to control which sections are included in the formatted context */
+export interface FormatContextOptions {
+  includePlotPoints?: boolean;
+  includeStyleReferences?: boolean;
+  includeChapterSummaries?: boolean;
+  includeChapterSynopses?: boolean;
 }
 
 /** Chapter-specific context for writing agents */
@@ -93,6 +101,7 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
       .select({
         chapterNumber: chapters.chapterNumber,
         title: chapters.title,
+        synopsis: chapters.synopsis,
         summaryBrief: chapters.summaryBrief,
       })
       .from(chapters)
@@ -275,23 +284,32 @@ export async function buildAgentContext(
 
 export function formatContextForPrompt(
   context: ProjectContext,
-  chapterContext?: ChapterContext
+  chapterContext?: ChapterContext,
+  options?: FormatContextOptions
 ): string {
+  const opts = {
+    includePlotPoints: true,
+    includeStyleReferences: true,
+    includeChapterSummaries: true,
+    includeChapterSynopses: false,
+    ...options,
+  };
+
   const sections: string[] = [];
 
   if (context.plotSynopsis) {
     sections.push(`## あらすじ\n${context.plotSynopsis}`);
   }
 
-  // Plot points (all)
-  if (context.plotPoints.length > 0) {
+  // Plot points (all) - optional
+  if (opts.includePlotPoints && context.plotPoints.length > 0) {
     const ppList = context.plotPoints
       .map((pp) => `- [${pp.act}] **${pp.title}**: ${pp.description}`)
       .join("\n");
     sections.push(`## プロットポイント（全体）\n${ppList}`);
   }
 
-  // Chapter-specific context
+  // Chapter-specific context (for writing pipeline)
   if (chapterContext) {
     const chSections: string[] = [];
     chSections.push(`# 今回の話: 第${chapterContext.chapterNumber}話${chapterContext.title ? `「${chapterContext.title}」` : ""}`);
@@ -362,15 +380,29 @@ export function formatContextForPrompt(
     sections.push(`## 未回収の伏線\n${fsList}`);
   }
 
-  // All chapter summaries (when no chapterContext provided, e.g. for coordinator)
-  if (!chapterContext && context.previousChapters.length > 0) {
-    const chList = context.previousChapters
+  // Chapter synopses (構成のあらすじ) - optional
+  if (opts.includeChapterSynopses && context.previousChapters.length > 0) {
+    const synList = context.previousChapters
       .map(
         (ch) =>
-          `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief ?? "要約なし"}`
+          `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.synopsis ?? "あらすじなし"}`
       )
       .join("\n");
-    sections.push(`## これまでの話\n${chList}`);
+    sections.push(`## 各話のあらすじ\n${synList}`);
+  }
+
+  // Chapter summaries (執筆後の要約) - optional
+  if (opts.includeChapterSummaries && !chapterContext && context.previousChapters.length > 0) {
+    const chList = context.previousChapters
+      .filter((ch) => ch.summaryBrief)
+      .map(
+        (ch) =>
+          `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief}`
+      )
+      .join("\n");
+    if (chList) {
+      sections.push(`## 執筆済みの話の要約\n${chList}`);
+    }
   }
 
   if (context.glossaryTerms.length > 0) {
@@ -380,7 +412,8 @@ export function formatContextForPrompt(
     sections.push(`## 用語集\n${glossaryList}`);
   }
 
-  if (context.styleReferences.length > 0) {
+  // Style references - optional
+  if (opts.includeStyleReferences && context.styleReferences.length > 0) {
     const styleList = context.styleReferences
       .map(
         (s) =>

@@ -348,6 +348,12 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
         body: JSON.stringify({
           projectId,
           mode: "custom",
+          formatOptions: {
+            includePlotPoints: false,
+            includeStyleReferences: false,
+            includeChapterSummaries: false,
+            includeChapterSynopses: true,
+          },
           customSteps: [
             {
               agentType: "continuity_checker",

@@ -102,12 +102,18 @@ export async function POST(req: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
   try {
     const body = await req.json();
-    const { projectId, chapterId, mode = "write", customSteps, resume = false } = body as {
+    const { projectId, chapterId, mode = "write", customSteps, resume = false, formatOptions: clientFormatOptions } = body as {
       projectId: string;
       chapterId?: string;
       mode?: "write" | "edit" | "custom";
       customSteps?: PipelineStep[];
       resume?: boolean;
+      formatOptions?: {
+        includePlotPoints?: boolean;
+        includeStyleReferences?: boolean;
+        includeChapterSummaries?: boolean;
+        includeChapterSynopses?: boolean;
+      };
     };
 
     if (!projectId) {
@@ -236,11 +242,22 @@ export async function POST(req: NextRequest) {
           taskIds.push(task.id);
         }
 
+        // Set default format options per mode
+        const formatOptions = clientFormatOptions ?? (mode === "write" || mode === "edit"
+          ? {
+              includePlotPoints: false,
+              includeStyleReferences: true,
+              includeChapterSummaries: true,
+              includeChapterSynopses: true,
+            }
+          : undefined);
+
         const results = await pipeline.execute({
           projectId,
           chapterId,
           steps,
           preloadedOutputs,
+          formatOptions,
           onEvent: async (event: StreamEvent) => {
             send(event);
 
