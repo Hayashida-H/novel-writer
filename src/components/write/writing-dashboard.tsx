@@ -32,8 +32,6 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
-  Clock,
-  Bot,
   ChevronDown,
   ChevronRight,
   ListTree,
@@ -84,15 +82,6 @@ const CHAPTER_STATUS_LABELS: Record<string, { ja: string; color: string }> = {
   editing: { ja: "編集中", color: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" },
   reviewed: { ja: "レビュー済", color: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" },
   final: { ja: "最終版", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-};
-
-const TASK_STATUS_ICONS: Record<string, typeof Clock> = {
-  pending: Clock,
-  queued: Clock,
-  running: Loader2,
-  completed: CheckCircle,
-  failed: XCircle,
-  cancelled: XCircle,
 };
 
 const AGENT_ABBREVS: Record<AgentType, string> = {
@@ -310,6 +299,8 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
   const handleWriteEpisode = useCallback(async (chapterId: string) => {
     // Cancel stale tasks first
     await fetch(`/api/agent-tasks?projectId=${projectId}`, { method: "DELETE" });
+    // Reset task state so agent icons go back to white (not_started)
+    setTasks((prev) => prev.filter((t) => t.chapterId !== chapterId));
     await executeStepByStep(chapterId, 0);
   }, [projectId, executeStepByStep]);
 
@@ -601,44 +592,6 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
           )}
         </div>
 
-        {/* Active Tasks */}
-        {activeTasks.length > 0 && (
-          <div>
-            <h3 className="mb-3 text-sm font-medium">稼働中エージェント</h3>
-            <div className="space-y-2">
-              {activeTasks.map((task) => {
-                const StatusIcon = TASK_STATUS_ICONS[task.status] || Clock;
-                const agentLabel = AGENT_LABELS[task.agentType as AgentType];
-                const chapter = chapters.find((c) => c.id === task.chapterId);
-                return (
-                  <div key={task.id} className="flex items-center gap-3 rounded-lg border p-3">
-                    <StatusIcon
-                      className={`h-4 w-4 ${
-                        task.status === "running"
-                          ? "animate-spin text-blue-500"
-                          : "text-muted-foreground"
-                      }`}
-                    />
-                    <Bot className="h-4 w-4 text-muted-foreground" />
-                    <div className="flex-1">
-                      <p className="text-xs font-medium">
-                        {agentLabel?.ja || task.agentType}
-                      </p>
-                      {chapter && (
-                        <p className="text-xs text-muted-foreground">
-                          第{chapter.chapterNumber}話: {chapter.title || "無題"}
-                        </p>
-                      )}
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {task.status === "running" ? "実行中" : "待機中"}
-                    </Badge>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Chapter Editor Dialog */}
