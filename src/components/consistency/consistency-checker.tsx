@@ -9,18 +9,27 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ShieldCheck,
   Sparkles,
   Loader2,
-  AlertTriangle,
-  AlertCircle,
-  Info,
   Copy,
   Check,
   BookMarked,
 } from "lucide-react";
 import { useSSEGeneration } from "@/hooks/use-sse-generation";
+import { ConsistencyResultDisplay } from "@/components/consistency/consistency-result-display";
+import { parseConsistencyResult, type ConsistencyResult } from "@/lib/agents/consistency-parser";
+
+interface ChapterItem {
+  id: string;
+  chapterNumber: number;
+  title: string | null;
+  content: string | null;
+  wordCount: number | null;
+  status: string;
+}
 
 interface ForeshadowingItem {
   id: string;
@@ -36,27 +45,6 @@ interface NarouKeyword {
   keyword: string;
   category: string;
   reason: string;
-}
-
-interface ConsistencyIssue {
-  severity: "error" | "warning" | "info";
-  category: string;
-  description: string;
-  location?: string;
-  suggestion?: string;
-}
-
-interface ConsistencyResult {
-  overallConsistency: "high" | "medium" | "low";
-  issues: ConsistencyIssue[];
-  foreshadowingUpdates: {
-    action: string;
-    title: string;
-    details: string;
-    suggestedStatus?: string;
-  }[];
-  newCharacters: { name: string; role: string; description: string }[];
-  newWorldSettings: { category: string; title: string; content: string }[];
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -88,12 +76,15 @@ interface ConsistencyCheckerProps {
 }
 
 export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
+  const [chapters, setChapters] = useState<ChapterItem[]>([]);
+  const [selectedChapterIds, setSelectedChapterIds] = useState<Set<string>>(new Set());
   const [foreshadowingItems, setForeshadowingItems] = useState<ForeshadowingItem[]>([]);
   const [foreshadowingFilter, setForeshadowingFilter] = useState<string>("active");
   const [keywords, setKeywords] = useState<NarouKeyword[]>([]);
   const [copiedAll, setCopiedAll] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<ConsistencyResult | null>(null);
+  const [streamingText, setStreamingText] = useState("");
 
   const { generate: generateKeywords, isGenerating: isGeneratingKeywords } =
     useSSEGeneration<NarouKeyword>({
@@ -102,23 +93,78 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
     });
 
   useEffect(() => {
-    async function loadForeshadowing() {
+    async function load() {
       try {
-        const res = await fetch(`/api/foreshadowing?projectId=${projectId}`);
-        if (res.ok) setForeshadowingItems(await res.json());
+        const [chapRes, fsRes] = await Promise.all([
+          fetch(`/api/chapters?projectId=${projectId}`),
+          fetch(`/api/foreshadowing?projectId=${projectId}`),
+        ]);
+        if (chapRes.ok) {
+          const allChapters: ChapterItem[] = await chapRes.json();
+          setChapters(allChapters);
+          // Pre-select all chapters that have content
+          const withContent = allChapters.filter((c) => c.content);
+          setSelectedChapterIds(new Set(withContent.map((c) => c.id)));
+        }
+        if (fsRes.ok) setForeshadowingItems(await fsRes.json());
       } catch (error) {
-        console.error("Failed to load foreshadowing:", error);
+        console.error("Failed to load:", error);
       }
     }
-    loadForeshadowing();
+    load();
   }, [projectId]);
 
-  const [streamingText, setStreamingText] = useState("");
+  const writtenChapters = chapters.filter((c) => c.content);
+
+  const toggleChapter = useCallback((chapterId: string) => {
+    setSelectedChapterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(chapterId)) next.delete(chapterId);
+      else next.add(chapterId);
+      return next;
+    });
+  }, []);
+
+  const toggleAll = useCallback(() => {
+    if (selectedChapterIds.size === writtenChapters.length) {
+      setSelectedChapterIds(new Set());
+    } else {
+      setSelectedChapterIds(new Set(writtenChapters.map((c) => c.id)));
+    }
+  }, [selectedChapterIds.size, writtenChapters]);
 
   const handleConsistencyCheck = useCallback(async () => {
     setIsChecking(true);
     setCheckResult(null);
     setStreamingText("");
+
+    // Build chapter content for the check message
+    const selectedChapters = chapters
+      .filter((c) => selectedChapterIds.has(c.id) && c.content)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+    if (selectedChapters.length === 0) {
+      setCheckResult({
+        overallConsistency: "medium",
+        issues: [{ severity: "info", category: "system", description: "チェック対象の執筆済み章がありません。" }],
+        foreshadowingUpdates: [],
+        newCharacters: [],
+        newWorldSettings: [],
+      });
+      setIsChecking(false);
+      return;
+    }
+
+    // Include chapter content (truncate each to 4000 chars to avoid token limits)
+    const chapterTexts = selectedChapters
+      .map((c) => {
+        const content = c.content!.length > 4000
+          ? c.content!.slice(0, 4000) + "\n\n…（以降省略）"
+          : c.content!;
+        return `### 第${c.chapterNumber}話「${c.title || "無題"}」\n${content}`;
+      })
+      .join("\n\n---\n\n");
+
     try {
       const res = await fetch("/api/agents/execute", {
         method: "POST",
@@ -129,13 +175,24 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
           customSteps: [
             {
               agentType: "continuity_checker",
-              taskType: "check",
-              description: "プロジェクト全体の整合性チェック",
+              taskType: "content_check",
+              description: "執筆済み本文の整合性チェック",
               messages: [
                 {
                   role: "user",
-                  content:
-                    "プロジェクト全体の整合性チェックを実施してください。登場人物の設定矛盾、時系列の不整合、世界観の齟齬、伏線の状態を確認し、問題点をリストアップしてください。章や話がまだ完成していない場合は、現時点で存在する設定データ間の整合性をチェックしてください。",
+                  content: `以下の執筆済み本文の整合性をチェックしてください。
+
+チェック観点:
+- キャラクターの言動・性格の一貫性（章間で矛盾がないか）
+- タイムラインの整合性（時間経過、季節、天候）
+- 場所・設定描写の一貫性
+- 能力・スキル設定の矛盾
+- 章間のストーリーの繋がり（前話の終わりと次話の始まりが自然か）
+- 伏線の設置・回収状況
+
+以下が対象の本文です:
+
+${chapterTexts}`,
                 },
               ],
             },
@@ -169,17 +226,13 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
             } else if (event.type === "agent_complete" && event.output?.content) {
               agentContent = event.output.content;
             } else if (event.type === "pipeline_complete") {
-              const result = parseConsistencyResult(agentContent);
-              setCheckResult(result);
+              setCheckResult(parseConsistencyResult(agentContent));
               setStreamingText("");
             } else if (event.type === "error") {
               throw new Error(event.message || "チェック中にエラーが発生しました");
             }
           } catch (e) {
-            if (e instanceof Error && e.message !== "Check failed") {
-              // Re-throw actual errors, ignore JSON parse errors
-              if (e.message.includes("チェック") || e.message.includes("エラー")) throw e;
-            }
+            if (e instanceof Error && (e.message.includes("チェック") || e.message.includes("エラー"))) throw e;
           }
         }
       }
@@ -202,7 +255,7 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
     } finally {
       setIsChecking(false);
     }
-  }, [projectId]);
+  }, [projectId, chapters, selectedChapterIds]);
 
   const handleCopyAllKeywords = useCallback(() => {
     const text = keywords.map((k) => k.keyword).join(" ");
@@ -226,17 +279,17 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
 
   return (
     <div className="space-y-6">
-      {/* Consistency Check Section */}
+      {/* Chapter Selection */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldCheck className="h-4 w-4" />
-            整合性チェック
+            本文 整合性チェック
           </CardTitle>
           <Button
             size="sm"
             onClick={handleConsistencyCheck}
-            disabled={isChecking}
+            disabled={isChecking || selectedChapterIds.size === 0}
           >
             {isChecking ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -246,150 +299,51 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
             {isChecking ? "チェック中..." : "チェック実行"}
           </Button>
         </CardHeader>
-        <CardContent>
-          {!checkResult && !isChecking && (
+        <CardContent className="space-y-4">
+          {/* Chapter selection */}
+          {writtenChapters.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              プロジェクト全体の整合性をAIがチェックします。登場人物の設定矛盾、時系列の不整合、世界観の齟齬、伏線の状態を確認します。
+              執筆済みの章がありません。執筆ページで章を書いてからチェックしてください。
             </p>
-          )}
-          {isChecking && (
+          ) : (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                AIが整合性をチェックしています...
-              </div>
-              {streamingText && (
-                <div className="max-h-32 overflow-y-auto rounded border bg-muted/30 p-2 text-xs text-muted-foreground">
-                  <pre className="whitespace-pre-wrap">{streamingText.slice(-500)}</pre>
-                </div>
-              )}
-            </div>
-          )}
-          {checkResult && (
-            <div className="space-y-3">
-              {/* Overall Consistency */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">整合性:</span>
-                <Badge
-                  variant="outline"
-                  className={
-                    checkResult.overallConsistency === "high"
-                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                      : checkResult.overallConsistency === "medium"
-                        ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-                        : "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-                  }
-                >
-                  {checkResult.overallConsistency === "high"
-                    ? "良好"
-                    : checkResult.overallConsistency === "medium"
-                      ? "要注意"
-                      : "問題あり"}
-                </Badge>
-                {checkResult.issues.length > 0 && (
-                  <span className="text-xs text-muted-foreground">
-                    （{checkResult.issues.filter((i) => i.severity === "error").length}件のエラー、
-                    {checkResult.issues.filter((i) => i.severity === "warning").length}件の警告）
-                  </span>
-                )}
-              </div>
-
-              {/* Issues */}
-              {checkResult.issues.length > 0 && (
-                <div className="space-y-2">
-                  {checkResult.issues.map((issue, i) => (
-                    <div
-                      key={i}
-                      className={`flex items-start gap-2 rounded-md border p-2 text-sm ${
-                        issue.severity === "error"
-                          ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950"
-                          : issue.severity === "warning"
-                            ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-950"
-                            : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950"
-                      }`}
-                    >
-                      {issue.severity === "error" ? (
-                        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
-                      ) : issue.severity === "warning" ? (
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-500" />
-                      ) : (
-                        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">
-                            {issue.category}
-                          </Badge>
-                          {issue.location && (
-                            <span className="text-xs text-muted-foreground">{issue.location}</span>
-                          )}
-                        </div>
-                        <p className="mt-1">{issue.description}</p>
-                        {issue.suggestion && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            修正案: {issue.suggestion}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Foreshadowing Updates */}
-              {checkResult.foreshadowingUpdates.length > 0 && (
-                <div>
-                  <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">伏線の更新提案</h4>
-                  <div className="space-y-1.5">
-                    {checkResult.foreshadowingUpdates.map((fu, i) => (
-                      <div key={i} className="rounded border p-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-xs">{fu.action === "new" ? "新規" : fu.action === "status_change" ? "変更" : "警告"}</Badge>
-                          <span className="font-medium">{fu.title}</span>
-                          {fu.suggestedStatus && (
-                            <Badge variant="outline" className={`text-xs ${STATUS_COLORS[fu.suggestedStatus] || ""}`}>
-                              → {STATUS_LABELS[fu.suggestedStatus] || fu.suggestedStatus}
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{fu.details}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* New Characters & World Settings */}
-              {(checkResult.newCharacters.length > 0 || checkResult.newWorldSettings.length > 0) && (
-                <div>
-                  <h4 className="mb-1.5 text-xs font-semibold text-muted-foreground">新規検出</h4>
-                  <div className="space-y-1.5">
-                    {checkResult.newCharacters.map((c, i) => (
-                      <div key={`char-${i}`} className="rounded border p-2 text-sm">
-                        <Badge variant="outline" className="text-xs mr-2">登場人物</Badge>
-                        <span className="font-medium">{c.name}</span>
-                        <span className="ml-2 text-xs text-muted-foreground">({c.role})</span>
-                        <p className="mt-1 text-xs text-muted-foreground">{c.description}</p>
-                      </div>
-                    ))}
-                    {checkResult.newWorldSettings.map((w, i) => (
-                      <div key={`world-${i}`} className="rounded border p-2 text-sm">
-                        <Badge variant="outline" className="text-xs mr-2">{w.category}</Badge>
-                        <span className="font-medium">{w.title}</span>
-                        <p className="mt-1 text-xs text-muted-foreground">{w.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {checkResult.issues.length === 0 && (
-                <p className="text-sm text-green-600 dark:text-green-400">
-                  現時点で整合性に問題は検出されませんでした。
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  チェック対象の章を選択してください（{selectedChapterIds.size}/{writtenChapters.length}話選択中）
                 </p>
-              )}
+                <Button variant="ghost" size="sm" className="text-xs h-6" onClick={toggleAll}>
+                  {selectedChapterIds.size === writtenChapters.length ? "全解除" : "全選択"}
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                {writtenChapters.map((ch) => (
+                  <label
+                    key={ch.id}
+                    className="flex items-center gap-2 rounded border px-2 py-1.5 text-sm cursor-pointer hover:bg-accent/50"
+                  >
+                    <Checkbox
+                      checked={selectedChapterIds.has(ch.id)}
+                      onCheckedChange={() => toggleChapter(ch.id)}
+                    />
+                    <span className="flex-1 truncate">
+                      第{ch.chapterNumber}話: {ch.title || "無題"}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {(ch.wordCount || 0).toLocaleString()}字
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           )}
+
+          {/* Check Result */}
+          <ConsistencyResultDisplay
+            result={checkResult}
+            isChecking={isChecking}
+            streamingText={streamingText}
+            emptyMessage="執筆済みの章の本文内容をAIがチェックします。キャラクターの一貫性、タイムライン、設定の整合性を確認します。"
+          />
         </CardContent>
       </Card>
 
@@ -505,7 +459,6 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Group by category */}
               {Object.entries(
                 keywords.reduce<Record<string, NarouKeyword[]>>((acc, kw) => {
                   const cat = kw.category || "その他";
@@ -543,86 +496,4 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
       </Card>
     </div>
   );
-}
-
-function parseConsistencyResult(text: string): ConsistencyResult {
-  const defaultResult: ConsistencyResult = {
-    overallConsistency: "medium",
-    issues: [],
-    foreshadowingUpdates: [],
-    newCharacters: [],
-    newWorldSettings: [],
-  };
-
-  try {
-    // Try to find JSON in the response (the prompt asks for JSON-only output)
-    const jsonMatch = text.match(/\{[\s\S]*"continuityIssues"[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-
-      return {
-        overallConsistency: parsed.overallConsistency || "medium",
-        issues: (parsed.continuityIssues || []).map((issue: Record<string, string>) => ({
-          severity: issue.severity || "info",
-          category: issue.category || "general",
-          description: issue.description || "",
-          location: issue.location,
-          suggestion: issue.suggestion,
-        })),
-        foreshadowingUpdates: parsed.foreshadowingUpdates || [],
-        newCharacters: parsed.newCharacters || [],
-        newWorldSettings: parsed.newWorldSettings || [],
-      };
-    }
-
-    // Fallback: try parsing the whole text as JSON
-    const parsed = JSON.parse(text.trim());
-    if (parsed.continuityIssues) {
-      return {
-        overallConsistency: parsed.overallConsistency || "medium",
-        issues: (parsed.continuityIssues || []).map((issue: Record<string, string>) => ({
-          severity: issue.severity || "info",
-          category: issue.category || "general",
-          description: issue.description || "",
-          location: issue.location,
-          suggestion: issue.suggestion,
-        })),
-        foreshadowingUpdates: parsed.foreshadowingUpdates || [],
-        newCharacters: parsed.newCharacters || [],
-        newWorldSettings: parsed.newWorldSettings || [],
-      };
-    }
-  } catch {
-    // Fall through to text parsing
-  }
-
-  // Fallback: parse as plain text
-  const lines = text.split("\n").filter((l) => l.trim());
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-      const severity: ConsistencyIssue["severity"] =
-        trimmed.includes("エラー") || trimmed.includes("重大")
-          ? "error"
-          : trimmed.includes("警告") || trimmed.includes("注意")
-            ? "warning"
-            : "info";
-      defaultResult.issues.push({
-        severity,
-        category: "general",
-        description: trimmed.slice(2),
-      });
-    }
-  }
-
-  // If no structured issues found, show the raw text as a single info item
-  if (defaultResult.issues.length === 0 && text.trim()) {
-    defaultResult.issues.push({
-      severity: "info",
-      category: "general",
-      description: text.trim().slice(0, 1000),
-    });
-  }
-
-  return defaultResult;
 }

@@ -6,7 +6,6 @@ import { getClaudeClient } from "@/lib/claude/client";
 import { createSSEStream } from "@/lib/claude/streaming";
 import { AgentPipeline } from "@/lib/agents/pipeline";
 import { generateChapterSummary } from "@/lib/agents/summary";
-import { extractContentFromCheck } from "@/lib/agents/content-extractor";
 import type { StreamEvent } from "@/types/agent";
 import type { PipelineStep } from "@/lib/agents/pipeline";
 import { requireAuth } from "@/lib/auth";
@@ -22,7 +21,6 @@ export const maxDuration = 300; // 5 min for long pipelines
 // 3. Character Mgr  → character psychology for those scenes/settings (sees: plan + plot + world)
 // 4. Writer         → integrates all preparation (sees: plot + world + characters)
 // 5. Editor         → polish and improve (sees: writer output)
-// 6. Continuity     → consistency check (sees: writer original + editor revision)
 function buildWritingPipeline(chapterNumber: number): PipelineStep[] {
   return [
     {
@@ -96,18 +94,6 @@ function buildWritingPipeline(chapterNumber: number): PipelineStep[] {
       ],
       dependsOn: [4],
     },
-    {
-      agentType: "continuity_checker",
-      taskType: "check",
-      description: `第${chapterNumber}話の整合性チェック`,
-      messages: [
-        {
-          role: "user",
-          content: `第${chapterNumber}話の整合性をチェックしてください。前話との矛盾、タイムラインの整合性、キャラクターの言動の一貫性、世界設定との矛盾がないか確認してください。執筆原文と編集後の両方を比較し、編集で意図せず失われた要素がないかも確認してください。`,
-        },
-      ],
-      dependsOn: [4, 5],
-    },
   ];
 }
 
@@ -153,7 +139,7 @@ export async function POST(req: NextRequest) {
     if (mode === "custom" && customSteps) {
       steps = customSteps;
     } else if (mode === "edit") {
-      // Simplified pipeline for editing: just editor + continuity checker
+      // Simplified pipeline for editing: just editor
       steps = [
         {
           agentType: "editor",
@@ -165,18 +151,6 @@ export async function POST(req: NextRequest) {
               content: `第${chapterNumber}章を再編集してください。文章の品質向上、表現の改善を行ってください。`,
             },
           ],
-        },
-        {
-          agentType: "continuity_checker",
-          taskType: "check",
-          description: `第${chapterNumber}章の整合性再チェック`,
-          messages: [
-            {
-              role: "user",
-              content: `編集後の第${chapterNumber}章の整合性を再チェックしてください。`,
-            },
-          ],
-          dependsOn: [0],
         },
       ];
     } else {
@@ -416,23 +390,6 @@ export async function POST(req: NextRequest) {
           } catch (err) {
             console.error("Failed to generate chapter summary:", err);
             // Non-fatal: don't fail the pipeline for summary generation
-          }
-        }
-
-        // Auto-extract new characters/world settings from continuity checker
-        const continuityResult = results.find((r) => r.agentType === "continuity_checker");
-        if (continuityResult?.content) {
-          try {
-            const extracted = await extractContentFromCheck(projectId, continuityResult.content);
-            if (extracted.newCharacters > 0 || extracted.newWorldSettings > 0) {
-              send({
-                type: "content_extracted",
-                newCharacters: extracted.newCharacters,
-                newWorldSettings: extracted.newWorldSettings,
-              } as unknown as StreamEvent);
-            }
-          } catch (err) {
-            console.error("Failed to extract content from continuity check:", err);
           }
         }
 

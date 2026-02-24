@@ -12,8 +12,6 @@ import {
   formatContextForPrompt,
 } from "@/lib/agents/context-builder";
 import { generateChapterSummary } from "@/lib/agents/summary";
-import { updateForeshadowingFromCheck } from "@/lib/agents/foreshadowing-updater";
-import { extractContentFromCheck } from "@/lib/agents/content-extractor";
 import type { AgentType } from "@/types/agent";
 import type { ClaudeMessage } from "@/lib/claude/client";
 import { requireAuth } from "@/lib/auth";
@@ -108,18 +106,6 @@ JSONで出力しないでください。`,
         },
       ],
       dependsOn: [4],
-    },
-    {
-      agentType: "continuity_checker",
-      taskType: "check",
-      description: `第${chapterNumber}話の整合性チェック`,
-      messages: [
-        {
-          role: "user",
-          content: `第${chapterNumber}話の整合性をチェックしてください。前話との矛盾、タイムラインの整合性、キャラクターの言動の一貫性、世界設定との矛盾がないか確認してください。執筆原文と編集後の両方を比較し、編集で意図せず失われた要素がないかも確認してください。`,
-        },
-      ],
-      dependsOn: [4, 5],
     },
   ];
 }
@@ -319,29 +305,19 @@ export async function POST(req: NextRequest) {
                 .where(eq(chapters.id, chapterId));
 
               console.log(`[execute-step] Chapter ${chapterId} content updated (${content.length} chars) by ${step.agentType}`);
+            // Generate summary after editor saves final content
+              if (step.agentType === "editor") {
+                try {
+                  await generateChapterSummary(chapterId);
+                } catch (err) {
+                  console.error("Failed to generate summary:", err);
+                }
+              }
             } else {
               console.warn(`[execute-step] No extractable content from ${step.agentType}, skipping chapter update`);
             }
           } catch (err) {
             console.error(`[execute-step] Failed to update chapter content for ${step.agentType}:`, err);
-          }
-        }
-
-        if (step.agentType === "continuity_checker") {
-          try {
-            await generateChapterSummary(chapterId);
-          } catch (err) {
-            console.error("Failed to generate summary:", err);
-          }
-          try {
-            await updateForeshadowingFromCheck(projectId, chapterId, result.rawContent);
-          } catch (err) {
-            console.error("Failed to update foreshadowing:", err);
-          }
-          try {
-            await extractContentFromCheck(projectId, result.rawContent);
-          } catch (err) {
-            console.error("Failed to extract content:", err);
           }
         }
 

@@ -36,7 +36,10 @@ import {
   ChevronDown,
   ChevronRight,
   FolderPlus,
+  ShieldCheck,
 } from "lucide-react";
+import { ConsistencyResultDisplay } from "@/components/consistency/consistency-result-display";
+import { parseConsistencyResult, type ConsistencyResult } from "@/lib/agents/consistency-parser";
 
 interface ArcItem {
   id: string;
@@ -72,6 +75,9 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
   const [collapsedArcs, setCollapsedArcs] = useState<Set<string>>(new Set());
   const [isCreatingChapters, setIsCreatingChapters] = useState(false);
   const [generatingArcId, setGeneratingArcId] = useState<string | null>(null);
+  const [isStructureChecking, setIsStructureChecking] = useState(false);
+  const [structureCheckResult, setStructureCheckResult] = useState<ConsistencyResult | null>(null);
+  const [structureStreamingText, setStructureStreamingText] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -301,6 +307,97 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
     }
   }, [projectId]);
 
+  // Structure-level consistency check
+  const handleStructureCheck = useCallback(async () => {
+    setIsStructureChecking(true);
+    setStructureCheckResult(null);
+    setStructureStreamingText("");
+    try {
+      const res = await fetch("/api/agents/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          mode: "custom",
+          customSteps: [
+            {
+              agentType: "continuity_checker",
+              taskType: "structure_check",
+              description: "構成の整合性チェック",
+              messages: [
+                {
+                  role: "user",
+                  content: `プロジェクトの構成（章立て・各話のあらすじ・プロットポイント）の整合性をチェックしてください。
+以下の観点で確認してください（本文の校正ではなく構成レベルのチェックです）:
+1. ストーリーフロー: 章間の展開が論理的に繋がっているか
+2. プロットポイント: 配置の適切さ、未使用ポイントの有無
+3. キャラクターアーク: 登場・退場・成長のタイミング
+4. 伏線の構造: 設置と回収のタイミング、残り章数での処理可能性
+5. 章のバランス: ボリュームの偏り、各章の目的の明確さ`,
+                },
+              ],
+            },
+          ],
+        }),
+      });
+
+      if (!res.ok) throw new Error("Check failed");
+      if (!res.body) throw new Error("No response body");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let agentContent = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const jsonStr = line.slice(6).trim();
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === "agent_stream" && event.text) {
+              setStructureStreamingText((prev) => prev + event.text);
+            } else if (event.type === "agent_complete" && event.output?.content) {
+              agentContent = event.output.content;
+            } else if (event.type === "pipeline_complete") {
+              setStructureCheckResult(parseConsistencyResult(agentContent));
+              setStructureStreamingText("");
+            } else if (event.type === "error") {
+              throw new Error(event.message || "チェック中にエラーが発生しました");
+            }
+          } catch (e) {
+            if (e instanceof Error && (e.message.includes("チェック") || e.message.includes("エラー"))) throw e;
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Structure check error:", error);
+      setStructureCheckResult({
+        overallConsistency: "low",
+        issues: [
+          {
+            severity: "error",
+            category: "system",
+            description: error instanceof Error ? error.message : "構成チェックに失敗しました",
+          },
+        ],
+        foreshadowingUpdates: [],
+        newCharacters: [],
+        newWorldSettings: [],
+      });
+      setStructureStreamingText("");
+    } finally {
+      setIsStructureChecking(false);
+    }
+  }, [projectId]);
+
   const totalWords = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
 
   const STATUS_LABELS: Record<string, string> = {
@@ -394,7 +491,40 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
             )}
             {isCreatingChapters ? "AI生成中..." : "プロットから章を作成"}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleStructureCheck}
+            disabled={isStructureChecking || (arcs.length === 0 && chapters.length === 0)}
+          >
+            {isStructureChecking ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            {isStructureChecking ? "チェック中..." : "構成チェック"}
+          </Button>
         </div>
+
+        {/* Structure Check Result */}
+        {(isStructureChecking || structureCheckResult) && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck className="h-4 w-4" />
+                構成チェック結果
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ConsistencyResultDisplay
+                result={structureCheckResult}
+                isChecking={isStructureChecking}
+                streamingText={structureStreamingText}
+                emptyMessage="構成の整合性をAIがチェックします。"
+              />
+            </CardContent>
+          </Card>
+        )}
 
         {/* Structure List */}
         <div>

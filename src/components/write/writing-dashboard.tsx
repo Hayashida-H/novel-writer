@@ -84,14 +84,13 @@ const CHAPTER_STATUS_LABELS: Record<string, { ja: string; color: string }> = {
   final: { ja: "最終版", color: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
 };
 
-const AGENT_ABBREVS: Record<AgentType, string> = {
+const AGENT_ABBREVS: Partial<Record<AgentType, string>> = {
   coordinator: "Co",
   plot_architect: "Pl",
   world_builder: "Wb",
   character_manager: "Ch",
   writer: "Wr",
   editor: "Ed",
-  continuity_checker: "Cc",
 };
 
 const AGENT_ORDER: AgentType[] = [
@@ -101,7 +100,6 @@ const AGENT_ORDER: AgentType[] = [
   "character_manager",
   "writer",
   "editor",
-  "continuity_checker",
 ];
 
 function getAgentStatusesForChapter(
@@ -295,7 +293,7 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
     }
   }, [projectId, executeStep, refreshTasks, handleRecoverContent]);
 
-  // Start writing from scratch (all 7 steps)
+  // Start writing from scratch (all 6 steps)
   const handleWriteEpisode = useCallback(async (chapterId: string) => {
     // Cancel stale tasks first
     await fetch(`/api/agent-tasks?projectId=${projectId}`, { method: "DELETE" });
@@ -353,7 +351,7 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
           {AGENT_ORDER.map((agentType) => {
             const status = statuses.get(agentType) || "not_started";
             const label = AGENT_LABELS[agentType];
-            const abbrev = AGENT_ABBREVS[agentType];
+            const abbrev = AGENT_ABBREVS[agentType] ?? agentType.slice(0, 2);
             let colorClass = "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400";
             if (status === "completed") {
               colorClass = "bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300";
