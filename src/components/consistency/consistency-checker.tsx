@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -17,6 +17,7 @@ import {
   Copy,
   Check,
   BookMarked,
+  Square,
 } from "lucide-react";
 import { useSSEGeneration } from "@/hooks/use-sse-generation";
 import { ConsistencyResultDisplay } from "@/components/consistency/consistency-result-display";
@@ -84,7 +85,8 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
   const [copiedAll, setCopiedAll] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [checkResult, setCheckResult] = useState<ConsistencyResult | null>(null);
-  const [streamingText, setStreamingText] = useState("");
+  const [checkAgentStatus, setCheckAgentStatus] = useState<"idle" | "running" | "completed">("idle");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const { generate: generateKeywords, isGenerating: isGeneratingKeywords } =
     useSSEGeneration<NarouKeyword>({
@@ -136,7 +138,7 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
   const handleConsistencyCheck = useCallback(async () => {
     setIsChecking(true);
     setCheckResult(null);
-    setStreamingText("");
+    setCheckAgentStatus("idle");
 
     // Build chapter content for the check message
     const selectedChapters = chapters
@@ -164,6 +166,9 @@ export function ConsistencyChecker({ projectId }: ConsistencyCheckerProps) {
         return `### 第${c.chapterNumber}話「${c.title || "無題"}」\n${content}`;
       })
       .join("\n\n---\n\n");
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const res = await fetch("/api/agents/execute", {
@@ -198,6 +203,7 @@ ${chapterTexts}`,
             },
           ],
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) throw new Error("Check failed");
@@ -207,6 +213,8 @@ ${chapterTexts}`,
       const decoder = new TextDecoder();
       let buffer = "";
       let agentContent = "";
+      let fullStreamText = "";
+      let resultSet = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -219,43 +227,67 @@ ${chapterTexts}`,
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
           try {
             const event = JSON.parse(jsonStr);
-            if (event.type === "agent_stream" && event.text) {
-              setStreamingText((prev) => prev + event.text);
+            if (event.type === "agent_start") {
+              setCheckAgentStatus("running");
+            } else if (event.type === "agent_stream" && event.text) {
+              fullStreamText += event.text;
             } else if (event.type === "agent_complete" && event.output?.content) {
               agentContent = event.output.content;
+              setCheckAgentStatus("completed");
             } else if (event.type === "pipeline_complete") {
-              setCheckResult(parseConsistencyResult(agentContent));
-              setStreamingText("");
+              const content = agentContent || fullStreamText;
+              if (content) {
+                setCheckResult(parseConsistencyResult(content));
+                resultSet = true;
+              }
             } else if (event.type === "error") {
               throw new Error(event.message || "チェック中にエラーが発生しました");
             }
           } catch (e) {
-            if (e instanceof Error && (e.message.includes("チェック") || e.message.includes("エラー"))) throw e;
+            if (!(e instanceof SyntaxError)) throw e;
           }
         }
       }
+
+      // Fallback: if stream ended without pipeline_complete (e.g. timeout)
+      if (!resultSet) {
+        const content = agentContent || fullStreamText;
+        if (content) {
+          setCheckResult(parseConsistencyResult(content));
+        }
+      }
     } catch (error) {
-      console.error("Consistency check error:", error);
-      setCheckResult({
-        overallConsistency: "low",
-        issues: [
-          {
-            severity: "error",
-            category: "system",
-            description: error instanceof Error ? error.message : "整合性チェックに失敗しました",
-          },
-        ],
-        foreshadowingUpdates: [],
-        newCharacters: [],
-        newWorldSettings: [],
-      });
-      setStreamingText("");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User cancelled
+      } else {
+        console.error("Consistency check error:", error);
+        setCheckResult({
+          overallConsistency: "low",
+          issues: [
+            {
+              severity: "error",
+              category: "system",
+              description: error instanceof Error ? error.message : "整合性チェックに失敗しました",
+            },
+          ],
+          foreshadowingUpdates: [],
+          newCharacters: [],
+          newWorldSettings: [],
+        });
+      }
     } finally {
       setIsChecking(false);
+      setCheckAgentStatus("idle");
+      abortControllerRef.current = null;
     }
   }, [projectId, chapters, selectedChapterIds]);
+
+  const handleCancelCheck = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const handleCopyAllKeywords = useCallback(() => {
     const text = keywords.map((k) => k.keyword).join(" ");
@@ -286,18 +318,31 @@ ${chapterTexts}`,
             <ShieldCheck className="h-4 w-4" />
             本文 整合性チェック
           </CardTitle>
-          <Button
-            size="sm"
-            onClick={handleConsistencyCheck}
-            disabled={isChecking || selectedChapterIds.size === 0}
-          >
-            {isChecking ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+          <div className="flex gap-2">
+            {isChecking && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleCancelCheck}
+                title="チェックを停止"
+              >
+                <Square className="mr-1.5 h-3.5 w-3.5" />
+                停止
+              </Button>
             )}
-            {isChecking ? "チェック中..." : "チェック実行"}
-          </Button>
+            <Button
+              size="sm"
+              onClick={handleConsistencyCheck}
+              disabled={isChecking || selectedChapterIds.size === 0}
+            >
+              {isChecking ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {isChecking ? "チェック中..." : "チェック実行"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Chapter selection */}
@@ -337,13 +382,37 @@ ${chapterTexts}`,
             </div>
           )}
 
-          {/* Check Result */}
-          <ConsistencyResultDisplay
-            result={checkResult}
-            isChecking={isChecking}
-            streamingText={streamingText}
-            emptyMessage="執筆済みの章の本文内容をAIがチェックします。キャラクターの一貫性、タイムライン、設定の整合性を確認します。"
-          />
+          {/* Check Status / Result */}
+          {isChecking ? (
+            <div className="flex items-center gap-3">
+              <span
+                className={`inline-flex h-6 w-7 items-center justify-center rounded text-[10px] font-bold ${
+                  checkAgentStatus === "completed"
+                    ? "bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300"
+                    : checkAgentStatus === "running"
+                      ? "bg-blue-200 text-blue-700 dark:bg-blue-900 dark:text-blue-300 animate-pulse"
+                      : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                }`}
+                title="整合性チェック"
+              >
+                Cc
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {checkAgentStatus === "running"
+                  ? "整合性エージェントが本文をチェック中..."
+                  : checkAgentStatus === "completed"
+                    ? "結果を解析中..."
+                    : "準備中..."}
+              </span>
+            </div>
+          ) : (
+            <ConsistencyResultDisplay
+              result={checkResult}
+              isChecking={false}
+              streamingText=""
+              emptyMessage="執筆済みの章の本文内容をAIがチェックします。キャラクターの一貫性、タイムライン、設定の整合性を確認します。"
+            />
+          )}
         </CardContent>
       </Card>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -37,6 +37,7 @@ import {
   ChevronRight,
   FolderPlus,
   ShieldCheck,
+  Square,
 } from "lucide-react";
 import { ConsistencyResultDisplay } from "@/components/consistency/consistency-result-display";
 import { parseConsistencyResult, type ConsistencyResult } from "@/lib/agents/consistency-parser";
@@ -77,7 +78,8 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
   const [generatingArcId, setGeneratingArcId] = useState<string | null>(null);
   const [isStructureChecking, setIsStructureChecking] = useState(false);
   const [structureCheckResult, setStructureCheckResult] = useState<ConsistencyResult | null>(null);
-  const [structureStreamingText, setStructureStreamingText] = useState("");
+  const [checkAgentStatus, setCheckAgentStatus] = useState<"idle" | "running" | "completed">("idle");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -311,7 +313,11 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
   const handleStructureCheck = useCallback(async () => {
     setIsStructureChecking(true);
     setStructureCheckResult(null);
-    setStructureStreamingText("");
+    setCheckAgentStatus("idle");
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     try {
       const res = await fetch("/api/agents/execute", {
         method: "POST",
@@ -339,6 +345,7 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
             },
           ],
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) throw new Error("Check failed");
@@ -348,6 +355,8 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
       const decoder = new TextDecoder();
       let buffer = "";
       let agentContent = "";
+      let fullStreamText = "";
+      let resultSet = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -360,43 +369,67 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           const jsonStr = line.slice(6).trim();
+          if (jsonStr === "[DONE]") continue;
           try {
             const event = JSON.parse(jsonStr);
-            if (event.type === "agent_stream" && event.text) {
-              setStructureStreamingText((prev) => prev + event.text);
+            if (event.type === "agent_start") {
+              setCheckAgentStatus("running");
+            } else if (event.type === "agent_stream" && event.text) {
+              fullStreamText += event.text;
             } else if (event.type === "agent_complete" && event.output?.content) {
               agentContent = event.output.content;
+              setCheckAgentStatus("completed");
             } else if (event.type === "pipeline_complete") {
-              setStructureCheckResult(parseConsistencyResult(agentContent));
-              setStructureStreamingText("");
+              const content = agentContent || fullStreamText;
+              if (content) {
+                setStructureCheckResult(parseConsistencyResult(content));
+                resultSet = true;
+              }
             } else if (event.type === "error") {
               throw new Error(event.message || "チェック中にエラーが発生しました");
             }
           } catch (e) {
-            if (e instanceof Error && (e.message.includes("チェック") || e.message.includes("エラー"))) throw e;
+            if (!(e instanceof SyntaxError)) throw e;
           }
         }
       }
+
+      // Fallback: if stream ended without pipeline_complete (e.g. timeout)
+      if (!resultSet) {
+        const content = agentContent || fullStreamText;
+        if (content) {
+          setStructureCheckResult(parseConsistencyResult(content));
+        }
+      }
     } catch (error) {
-      console.error("Structure check error:", error);
-      setStructureCheckResult({
-        overallConsistency: "low",
-        issues: [
-          {
-            severity: "error",
-            category: "system",
-            description: error instanceof Error ? error.message : "構成チェックに失敗しました",
-          },
-        ],
-        foreshadowingUpdates: [],
-        newCharacters: [],
-        newWorldSettings: [],
-      });
-      setStructureStreamingText("");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        // User cancelled — no error to show
+      } else {
+        console.error("Structure check error:", error);
+        setStructureCheckResult({
+          overallConsistency: "low",
+          issues: [
+            {
+              severity: "error",
+              category: "system",
+              description: error instanceof Error ? error.message : "構成チェックに失敗しました",
+            },
+          ],
+          foreshadowingUpdates: [],
+          newCharacters: [],
+          newWorldSettings: [],
+        });
+      }
     } finally {
       setIsStructureChecking(false);
+      setCheckAgentStatus("idle");
+      abortControllerRef.current = null;
     }
   }, [projectId]);
+
+  const handleCancelStructureCheck = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const totalWords = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
 
@@ -509,19 +542,53 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
         {/* Structure Check Result */}
         {(isStructureChecking || structureCheckResult) && (
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShieldCheck className="h-4 w-4" />
                 構成チェック結果
               </CardTitle>
+              {isStructureChecking && (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleCancelStructureCheck}
+                  title="チェックを停止"
+                >
+                  <Square className="mr-1.5 h-3.5 w-3.5" />
+                  停止
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
-              <ConsistencyResultDisplay
-                result={structureCheckResult}
-                isChecking={isStructureChecking}
-                streamingText={structureStreamingText}
-                emptyMessage="構成の整合性をAIがチェックします。"
-              />
+              {isStructureChecking ? (
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`inline-flex h-6 w-7 items-center justify-center rounded text-[10px] font-bold ${
+                      checkAgentStatus === "completed"
+                        ? "bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300"
+                        : checkAgentStatus === "running"
+                          ? "bg-blue-200 text-blue-700 dark:bg-blue-900 dark:text-blue-300 animate-pulse"
+                          : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                    }`}
+                    title="整合性チェック"
+                  >
+                    Cc
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {checkAgentStatus === "running"
+                      ? "整合性エージェントが構成をチェック中..."
+                      : checkAgentStatus === "completed"
+                        ? "結果を解析中..."
+                        : "準備中..."}
+                  </span>
+                </div>
+              ) : (
+                <ConsistencyResultDisplay
+                  result={structureCheckResult}
+                  isChecking={false}
+                  streamingText=""
+                />
+              )}
             </CardContent>
           </Card>
         )}
