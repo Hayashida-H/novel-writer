@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { annotations, annotationBatches } from "@/lib/db/schema";
+import { annotations, annotationBatches, chapterVersions, chapters } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth";
 
@@ -57,7 +57,6 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       chapterId,
-      chapterVersionId,
       paragraphIndex,
       startOffset,
       endOffset,
@@ -66,19 +65,49 @@ export async function POST(req: NextRequest) {
       annotationType,
     } = body;
 
-    if (!chapterId || !chapterVersionId || paragraphIndex == null || !comment) {
+    if (!chapterId || paragraphIndex == null || !comment) {
       return NextResponse.json(
-        { error: "chapterId, chapterVersionId, paragraphIndex, and comment are required" },
+        { error: "chapterId, paragraphIndex, and comment are required" },
         { status: 400 }
       );
     }
 
     const db = getDb();
+
+    // Get or create a chapter version for this chapter
+    let [latestVersion] = await db
+      .select()
+      .from(chapterVersions)
+      .where(eq(chapterVersions.chapterId, chapterId))
+      .orderBy(desc(chapterVersions.versionNumber))
+      .limit(1);
+
+    if (!latestVersion) {
+      // Auto-create version 1 from current chapter content
+      const [chapter] = await db
+        .select({ content: chapters.content, wordCount: chapters.wordCount })
+        .from(chapters)
+        .where(eq(chapters.id, chapterId))
+        .limit(1);
+
+      [latestVersion] = await db
+        .insert(chapterVersions)
+        .values({
+          chapterId,
+          versionNumber: 1,
+          content: chapter?.content || "",
+          changeSummary: "初期バージョン（自動作成）",
+          createdBy: "system",
+          wordCount: chapter?.wordCount || 0,
+        })
+        .returning();
+    }
+
     const [item] = await db
       .insert(annotations)
       .values({
         chapterId,
-        chapterVersionId,
+        chapterVersionId: latestVersion.id,
         paragraphIndex,
         startOffset: startOffset ?? null,
         endOffset: endOffset ?? null,

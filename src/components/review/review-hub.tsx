@@ -158,7 +158,6 @@ export function ReviewHub({ projectId }: ReviewHubProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           chapterId: selectedChapter.id,
-          chapterVersionId: selectedChapter.id, // simplified: use chapter id as version id
           paragraphIndex: newAnnotation.paragraphIndex,
           anchorText: newAnnotation.anchorText || null,
           comment: newAnnotation.comment,

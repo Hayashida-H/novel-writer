@@ -1,5 +1,5 @@
 import { getDb } from "@/lib/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, lt, asc, desc } from "drizzle-orm";
 import {
   chapters,
   characters,
@@ -18,7 +18,7 @@ import { getDefaultConfig } from "./prompts";
 export interface ProjectContext {
   characters: { name: string; role: string; description: string | null; speechPattern: string | null }[];
   plotSynopsis: string | null;
-  plotPoints: { title: string; description: string; act: string }[];
+  plotPoints: { id: string; title: string; description: string; act: string }[];
   worldSettings: { category: string; title: string; content: string }[];
   previousChapters: { chapterNumber: number; title: string | null; summaryBrief: string | null }[];
   activeForeshadowing: {
@@ -30,6 +30,17 @@ export interface ProjectContext {
   }[];
   styleReferences: { title: string; styleNotes: string | null; sampleText: string | null }[];
   glossaryTerms: { term: string; reading: string | null; category: string | null; description: string }[];
+}
+
+/** Chapter-specific context for writing agents */
+export interface ChapterContext {
+  chapterNumber: number;
+  title: string | null;
+  synopsis: string | null;
+  chapterPlotPoints: { title: string; description: string; act: string }[];
+  previousChapterContent: string | null;
+  previousChapterSummary: string | null;
+  recentChapterSummaries: { chapterNumber: number; title: string | null; summaryBrief: string | null }[];
 }
 
 export async function buildProjectContext(projectId: string): Promise<ProjectContext> {
@@ -60,6 +71,7 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
       .limit(1),
     db
       .select({
+        id: plotPoints.id,
         title: plotPoints.title,
         description: plotPoints.description,
         act: plotPoints.act,
@@ -138,6 +150,97 @@ export async function buildProjectContext(projectId: string): Promise<ProjectCon
   };
 }
 
+/**
+ * Build chapter-specific context: synopsis, plot points for this chapter,
+ * and previous chapters' content/summaries.
+ */
+export async function buildChapterContext(
+  projectId: string,
+  chapterId: string,
+  allPlotPoints: ProjectContext["plotPoints"]
+): Promise<ChapterContext> {
+  const db = getDb();
+
+  // Get current chapter
+  const [chapter] = await db
+    .select()
+    .from(chapters)
+    .where(eq(chapters.id, chapterId))
+    .limit(1);
+
+  if (!chapter) {
+    return {
+      chapterNumber: 0,
+      title: null,
+      synopsis: null,
+      chapterPlotPoints: [],
+      previousChapterContent: null,
+      previousChapterSummary: null,
+      recentChapterSummaries: [],
+    };
+  }
+
+  // Get plot points assigned to this chapter
+  const chapterPlotPointIds = (chapter.plotPointIds as string[]) || [];
+  const chapterPlotPoints = chapterPlotPointIds.length > 0
+    ? allPlotPoints.filter((pp) => chapterPlotPointIds.includes(pp.id))
+    : [];
+
+  // Get previous chapters for context (summaries of all earlier, + full content of immediately previous)
+  const prevChapters = await db
+    .select({
+      chapterNumber: chapters.chapterNumber,
+      title: chapters.title,
+      summaryBrief: chapters.summaryBrief,
+      summaryDetailed: chapters.summaryDetailed,
+      content: chapters.content,
+    })
+    .from(chapters)
+    .where(
+      and(
+        eq(chapters.projectId, projectId),
+        lt(chapters.chapterNumber, chapter.chapterNumber)
+      )
+    )
+    .orderBy(asc(chapters.chapterNumber));
+
+  // Immediately previous chapter (full content or detailed summary)
+  const immediatePrev = prevChapters.length > 0 ? prevChapters[prevChapters.length - 1] : null;
+
+  // Use detailed summary if available, otherwise truncated content
+  let previousChapterContent: string | null = null;
+  let previousChapterSummary: string | null = null;
+  if (immediatePrev) {
+    previousChapterSummary = immediatePrev.summaryDetailed || immediatePrev.summaryBrief || null;
+    // Include full content of previous chapter (truncate if very long)
+    if (immediatePrev.content) {
+      previousChapterContent = immediatePrev.content.length > 6000
+        ? immediatePrev.content.slice(0, 6000) + "\n\n…（以降省略）"
+        : immediatePrev.content;
+    }
+  }
+
+  // Recent chapter summaries (up to 5 chapters back, excluding the immediately previous one which we include in detail)
+  const recentSummaries = prevChapters
+    .slice(0, -1) // exclude the immediately previous (already handled above)
+    .slice(-5) // last 5 before that
+    .map((ch) => ({
+      chapterNumber: ch.chapterNumber,
+      title: ch.title,
+      summaryBrief: ch.summaryBrief,
+    }));
+
+  return {
+    chapterNumber: chapter.chapterNumber,
+    title: chapter.title,
+    synopsis: chapter.synopsis,
+    chapterPlotPoints,
+    previousChapterContent,
+    previousChapterSummary,
+    recentChapterSummaries: recentSummaries,
+  };
+}
+
 export async function buildAgentContext(
   projectId: string,
   agentType: AgentType,
@@ -170,11 +273,61 @@ export async function buildAgentContext(
   };
 }
 
-export function formatContextForPrompt(context: ProjectContext): string {
+export function formatContextForPrompt(
+  context: ProjectContext,
+  chapterContext?: ChapterContext
+): string {
   const sections: string[] = [];
 
   if (context.plotSynopsis) {
     sections.push(`## あらすじ\n${context.plotSynopsis}`);
+  }
+
+  // Plot points (all)
+  if (context.plotPoints.length > 0) {
+    const ppList = context.plotPoints
+      .map((pp) => `- [${pp.act}] **${pp.title}**: ${pp.description}`)
+      .join("\n");
+    sections.push(`## プロットポイント（全体）\n${ppList}`);
+  }
+
+  // Chapter-specific context
+  if (chapterContext) {
+    const chSections: string[] = [];
+    chSections.push(`# 今回の話: 第${chapterContext.chapterNumber}話${chapterContext.title ? `「${chapterContext.title}」` : ""}`);
+
+    if (chapterContext.synopsis) {
+      chSections.push(`## この話のあらすじ\n${chapterContext.synopsis}`);
+    }
+
+    if (chapterContext.chapterPlotPoints.length > 0) {
+      const cpList = chapterContext.chapterPlotPoints
+        .map((pp) => `- [${pp.act}] **${pp.title}**: ${pp.description}`)
+        .join("\n");
+      chSections.push(`## この話で扱うプロットポイント\n${cpList}`);
+    }
+
+    // Previous chapter (detailed)
+    if (chapterContext.previousChapterSummary || chapterContext.previousChapterContent) {
+      let prevSection = `## 前話（第${chapterContext.chapterNumber - 1}話）の内容`;
+      if (chapterContext.previousChapterSummary) {
+        prevSection += `\n### 要約\n${chapterContext.previousChapterSummary}`;
+      }
+      if (chapterContext.previousChapterContent) {
+        prevSection += `\n### 本文\n${chapterContext.previousChapterContent}`;
+      }
+      chSections.push(prevSection);
+    }
+
+    // Earlier chapter summaries
+    if (chapterContext.recentChapterSummaries.length > 0) {
+      const summList = chapterContext.recentChapterSummaries
+        .map((ch) => `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief ?? "要約なし"}`)
+        .join("\n");
+      chSections.push(`## それ以前の話の要約\n${summList}`);
+    }
+
+    sections.push(chSections.join("\n\n"));
   }
 
   if (context.characters.length > 0) {
@@ -209,14 +362,15 @@ export function formatContextForPrompt(context: ProjectContext): string {
     sections.push(`## 未回収の伏線\n${fsList}`);
   }
 
-  if (context.previousChapters.length > 0) {
+  // All chapter summaries (when no chapterContext provided, e.g. for coordinator)
+  if (!chapterContext && context.previousChapters.length > 0) {
     const chList = context.previousChapters
       .map(
         (ch) =>
-          `- 第${ch.chapterNumber}章${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief ?? "要約なし"}`
+          `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief ?? "要約なし"}`
       )
       .join("\n");
-    sections.push(`## これまでの章\n${chList}`);
+    sections.push(`## これまでの話\n${chList}`);
   }
 
   if (context.glossaryTerms.length > 0) {

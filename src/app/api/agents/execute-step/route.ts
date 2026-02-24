@@ -8,6 +8,7 @@ import { BaseAgent } from "@/lib/agents/base-agent";
 import {
   buildAgentContext,
   buildProjectContext,
+  buildChapterContext,
   formatContextForPrompt,
 } from "@/lib/agents/context-builder";
 import { generateChapterSummary } from "@/lib/agents/summary";
@@ -231,7 +232,8 @@ export async function POST(req: NextRequest) {
     const client = getClaudeClient();
     const agent = new BaseAgent(step.agentType, client);
     const projectContext = await buildProjectContext(projectId);
-    const contextPrompt = formatContextForPrompt(projectContext);
+    const chapterContext = await buildChapterContext(projectId, chapterId, projectContext.plotPoints);
+    const contextPrompt = formatContextForPrompt(projectContext, chapterContext);
     const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
 
     // Enrich messages with project context + dependent outputs
