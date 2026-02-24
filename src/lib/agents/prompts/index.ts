@@ -6,6 +6,7 @@ import { WRITER_PROMPT, WRITER_CONFIG } from "./writer";
 import { EDITOR_PROMPT, EDITOR_CONFIG } from "./editor";
 import { WORLD_BUILDER_PROMPT, WORLD_BUILDER_CONFIG } from "./world-builder";
 import { CONTINUITY_CHECKER_PROMPT, CONTINUITY_CHECKER_CONFIG } from "./continuity-checker";
+import { FIXER_PROMPT, FIXER_CONFIG } from "./fixer";
 
 export interface DefaultAgentConfig {
   agentType: AgentType;
@@ -57,6 +58,10 @@ const DEFAULT_CONFIGS: Record<AgentType, DefaultAgentConfig> = {
     ...CONTINUITY_CHECKER_CONFIG,
     systemPrompt: withConsultation(CONTINUITY_CHECKER_PROMPT),
   },
+  fixer: {
+    ...FIXER_CONFIG,
+    systemPrompt: withConsultation(FIXER_PROMPT),
+  },
 };
 
 export function getDefaultConfig(agentType: AgentType): DefaultAgentConfig {
@@ -75,4 +80,5 @@ export {
   EDITOR_PROMPT,
   WORLD_BUILDER_PROMPT,
   CONTINUITY_CHECKER_PROMPT,
+  FIXER_PROMPT,
 };

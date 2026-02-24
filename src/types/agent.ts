@@ -11,7 +11,8 @@ export type AgentType =
   | "writer"
   | "editor"
   | "world_builder"
-  | "continuity_checker";
+  | "continuity_checker"
+  | "fixer";
 
 export type TaskStatus = "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -23,6 +24,7 @@ export const AGENT_LABELS: Record<AgentType, { ja: string; en: string }> = {
   editor: { ja: "編集・校正", en: "Editor" },
   world_builder: { ja: "世界観設定", en: "World Builder" },
   continuity_checker: { ja: "整合性チェック", en: "Continuity Checker" },
+  fixer: { ja: "修正担当", en: "Fixer" },
 };
 
 export interface StreamEvent {

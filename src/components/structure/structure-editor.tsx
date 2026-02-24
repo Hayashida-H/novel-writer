@@ -315,7 +315,7 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
     setIsStructureChecking(true);
     setStructureCheckResult(null);
     setFixSummary("");
-    setAgentStatuses({ continuity_checker: "idle", plot_architect: "idle" });
+    setAgentStatuses({ continuity_checker: "idle", fixer: "idle" });
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -367,30 +367,36 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
               ],
             },
             {
-              agentType: "plot_architect",
+              agentType: "fixer",
               taskType: "structure_fix",
-              description: "構成チェックに基づくあらすじ修正",
+              description: "構成チェックに基づく修正",
               dependsOn: [0],
               messages: [
                 {
                   role: "user",
-                  content: `前ステップの構成チェック結果に基づいて、各章・各話のあらすじを修正してください。
+                  content: `前ステップの構成チェック結果に基づいて、指摘された問題を修正してください。
 
 現在の構成:
 ${synopsisInfo}
 
-修正方針:
-- チェックで指摘された問題を解消するようにあらすじを調整
-- ストーリーフローが自然になるよう章間の繋がりを改善
-- 伏線のタイミングを適切に調整
-- 修正不要な話はそのまま（全話修正する必要はない）
+修正対象:
+- あらすじの修正・作成（欠落している話、矛盾がある話）
+- 伏線エントリの追加（不足が指摘された場合）
+- キャラクター設定の補足（成長アークが不明確な場合）
+- 修正不要な箇所はスキップしてください
 
 以下のJSON形式のみを出力してください。他のテキストは含めないでください:
 {
-  "revisions": [
+  "synopsisRevisions": [
     { "chapterNumber": 話番号, "synopsis": "修正後のあらすじ" }
   ],
-  "changesSummary": "何をどう変更したかの要約"
+  "newForeshadowing": [
+    { "title": "伏線タイトル", "description": "説明", "targetChapter": 回収予定話番号, "priority": "high | medium | low" }
+  ],
+  "characterUpdates": [
+    { "name": "キャラ名", "field": "arcDescription | goals | backstory", "value": "更新内容" }
+  ],
+  "changesSummary": "変更内容の要約"
 }`,
                 },
               ],
@@ -407,7 +413,7 @@ ${synopsisInfo}
       const decoder = new TextDecoder();
       let buffer = "";
       let checkContent = "";
-      let plotContent = "";
+      let fixerContent = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -429,8 +435,8 @@ ${synopsisInfo}
               setAgentStatuses((prev) => ({ ...prev, [event.agentType]: "completed" }));
               if (event.agentType === "continuity_checker") {
                 checkContent = event.output.content;
-              } else if (event.agentType === "plot_architect") {
-                plotContent = event.output.content;
+              } else if (event.agentType === "fixer") {
+                fixerContent = event.output.content;
               }
             } else if (event.type === "error") {
               throw new Error(event.message || "チェック中にエラーが発生しました");
@@ -446,15 +452,18 @@ ${synopsisInfo}
         setStructureCheckResult(parseConsistencyResult(checkContent));
       }
 
-      // Parse and apply plot revisions
-      if (plotContent) {
+      // Parse and apply fixer output
+      if (fixerContent) {
         try {
-          const jsonMatch = plotContent.match(/\{[\s\S]*"revisions"[\s\S]*\}/);
+          const jsonMatch = fixerContent.match(/\{[\s\S]*"synopsisRevisions"[\s\S]*\}/);
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
-            if (parsed.revisions && Array.isArray(parsed.revisions)) {
-              let savedCount = 0;
-              for (const rev of parsed.revisions) {
+            const summaryParts: string[] = [];
+
+            // 1. Apply synopsis revisions
+            if (parsed.synopsisRevisions && Array.isArray(parsed.synopsisRevisions)) {
+              let synopsisCount = 0;
+              for (const rev of parsed.synopsisRevisions) {
                 const chapter = chapters.find((c) => c.chapterNumber === rev.chapterNumber);
                 if (chapter && rev.synopsis) {
                   const updateRes = await fetch("/api/chapters", {
@@ -462,22 +471,70 @@ ${synopsisInfo}
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ id: chapter.id, synopsis: rev.synopsis }),
                   });
-                  if (updateRes.ok) savedCount++;
+                  if (updateRes.ok) synopsisCount++;
                 }
               }
-              // Refresh chapters to show updated synopses
-              if (savedCount > 0) {
-                const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
-                if (chapRes.ok) setChapters(await chapRes.json());
-              }
-              setFixSummary(
-                parsed.changesSummary || `${savedCount}話のあらすじを修正しました`
-              );
+              if (synopsisCount > 0) summaryParts.push(`${synopsisCount}話のあらすじを修正`);
             }
+
+            // 2. Create new foreshadowing entries
+            if (parsed.newForeshadowing && Array.isArray(parsed.newForeshadowing)) {
+              let fsCount = 0;
+              for (const fs of parsed.newForeshadowing) {
+                if (fs.title && fs.description) {
+                  const fsRes = await fetch("/api/foreshadowing", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      projectId,
+                      title: fs.title,
+                      description: fs.description,
+                      targetChapter: fs.targetChapter || null,
+                      priority: fs.priority || "medium",
+                    }),
+                  });
+                  if (fsRes.ok) fsCount++;
+                }
+              }
+              if (fsCount > 0) summaryParts.push(`${fsCount}件の伏線を追加`);
+            }
+
+            // 3. Update character settings
+            if (parsed.characterUpdates && Array.isArray(parsed.characterUpdates)) {
+              let charCount = 0;
+              // Fetch current characters to find IDs by name
+              const charRes = await fetch(`/api/characters?projectId=${projectId}`);
+              if (charRes.ok) {
+                const existingChars = await charRes.json();
+                for (const update of parsed.characterUpdates) {
+                  const char = existingChars.find((c: { name: string }) => c.name === update.name);
+                  if (char && update.field && update.value) {
+                    const updateRes = await fetch("/api/characters", {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ id: char.id, [update.field]: update.value }),
+                    });
+                    if (updateRes.ok) charCount++;
+                  }
+                }
+              }
+              if (charCount > 0) summaryParts.push(`${charCount}件のキャラクター設定を更新`);
+            }
+
+            // Refresh chapters
+            const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
+            if (chapRes.ok) setChapters(await chapRes.json());
+
+            const detail = summaryParts.length > 0 ? summaryParts.join("、") : "修正なし";
+            setFixSummary(
+              parsed.changesSummary
+                ? `${parsed.changesSummary}（${detail}）`
+                : detail
+            );
           }
         } catch (e) {
-          console.error("Failed to apply revisions:", e);
-          setFixSummary("あらすじの自動修正に失敗しました。チェック結果を参考に手動で修正してください。");
+          console.error("Failed to apply fixes:", e);
+          setFixSummary("自動修正に失敗しました。チェック結果を参考に手動で修正してください。");
         }
       }
     } catch (error) {
@@ -645,7 +702,7 @@ ${synopsisInfo}
                   <div className="flex items-center gap-3">
                     {[
                       { key: "continuity_checker", abbrev: "Cc", label: "整合性チェック" },
-                      { key: "plot_architect", abbrev: "Pl", label: "プロット修正" },
+                      { key: "fixer", abbrev: "Fx", label: "修正担当" },
                     ].map(({ key, abbrev, label }) => {
                       const status = agentStatuses[key] || "idle";
                       const colorClass =
@@ -665,9 +722,9 @@ ${synopsisInfo}
                       );
                     })}
                     <span className="text-sm text-muted-foreground">
-                      {agentStatuses.plot_architect === "running"
-                        ? "プロット担当があらすじを修正中..."
-                        : agentStatuses.plot_architect === "completed"
+                      {agentStatuses.fixer === "running"
+                        ? "修正担当が対応中..."
+                        : agentStatuses.fixer === "completed"
                           ? "修正を保存中..."
                           : agentStatuses.continuity_checker === "running"
                             ? "整合性をチェック中..."
@@ -687,7 +744,7 @@ ${synopsisInfo}
                   {fixSummary && (
                     <div className="rounded-md border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950">
                       <p className="text-sm font-medium text-green-800 dark:text-green-200">
-                        プロット担当による修正
+                        修正担当による対応
                       </p>
                       <p className="mt-1 text-sm text-green-700 dark:text-green-300">
                         {fixSummary}

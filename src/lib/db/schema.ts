@@ -298,6 +298,7 @@ export const agentConfigs = pgTable(
         "editor",
         "world_builder",
         "continuity_checker",
+        "fixer",
       ],
     }).notNull(),
     systemPrompt: text("system_prompt").notNull(),
