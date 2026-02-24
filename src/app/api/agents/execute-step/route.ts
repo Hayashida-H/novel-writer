@@ -85,7 +85,9 @@ function buildWritingPipeline(chapterNumber: number): StepDef[] {
       messages: [
         {
           role: "user",
-          content: `第${chapterNumber}話の本文を執筆してください。シーン構成、舞台設定、キャラクターブリーフに基づいて、読者を引き込む文章で執筆してください。`,
+          content: `第${chapterNumber}話の本文を執筆してください。シーン構成、舞台設定、キャラクターブリーフに基づいて、読者を引き込む文章で執筆してください。
+
+【重要】出力は小説の本文のみにしてください。JSON、メタデータ、構成メモ、コメントなどは一切含めないでください。読者がそのまま読める小説本文だけを出力してください。`,
         },
       ],
       dependsOn: [1, 2, 3],
@@ -97,7 +99,12 @@ function buildWritingPipeline(chapterNumber: number): StepDef[] {
       messages: [
         {
           role: "user",
-          content: `第${chapterNumber}話の本文を校正してください。文章の品質、表現の一貫性、誤字脱字、読みやすさを確認し、修正版を出力してください。`,
+          content: `第${chapterNumber}話の本文を校正してください。文章の品質、表現の一貫性、誤字脱字、読みやすさを確認し、修正版を出力してください。
+
+【重要】出力形式を厳守してください：
+1. まず「--- 修正後本文 ---」と書いてから、校正済みの完全な本文を出力
+2. 次に「--- フィードバック ---」と書いてから、修正箇所・評価を記載
+JSONで出力しないでください。`,
         },
       ],
       dependsOn: [4],
@@ -236,20 +243,30 @@ export async function POST(req: NextRequest) {
     const contextPrompt = formatContextForPrompt(projectContext, chapterContext);
     const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
 
-    // Enrich messages with project context + dependent outputs
+    // Enrich messages with project context + dependent outputs (labeled by agent)
     const contextParts: string[] = [contextPrompt];
+    const AGENT_LABELS: Record<string, string> = {
+      coordinator: "コーディネーター（執筆計画）",
+      plot_architect: "プロット設計（シーン構成）",
+      world_builder: "世界設定（舞台・環境）",
+      character_manager: "キャラクターブリーフ",
+      writer: "執筆済み本文",
+      editor: "校正済み本文",
+    };
     if (step.dependsOn) {
       for (const depIdx of step.dependsOn) {
         const depOutput = dependentOutputs.get(depIdx);
         if (depOutput) {
-          contextParts.push(`## 前のステップの出力\n${depOutput}`);
+          const depAgent = allSteps[depIdx].agentType;
+          const label = AGENT_LABELS[depAgent] || depAgent;
+          contextParts.push(`## ${label}\n${depOutput}`);
         }
       }
     }
 
     const contextMessage: ClaudeMessage = {
       role: "user",
-      content: `以下はプロジェクトのコンテキスト情報です：\n\n${contextParts.join("\n\n---\n\n")}`,
+      content: `以下はプロジェクトのコンテキスト情報です（参考情報として読み取ってください。前ステップの出力形式を真似る必要はありません）：\n\n${contextParts.join("\n\n---\n\n")}`,
     };
 
     const enrichedMessages: ClaudeMessage[] = [contextMessage, ...step.messages];
