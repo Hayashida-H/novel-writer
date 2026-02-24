@@ -242,6 +242,7 @@ export async function POST(req: NextRequest) {
     const chapterContext = await buildChapterContext(projectId, chapterId, projectContext.plotPoints);
     const contextPrompt = formatContextForPrompt(projectContext, chapterContext);
     const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
+    console.log(`[execute-step] Starting ${step.agentType}: model=${agentContext.model}, maxTokens=${agentContext.maxTokens}`);
 
     // Enrich messages with project context + dependent outputs (labeled by agent)
     const contextParts: string[] = [contextPrompt];
@@ -282,6 +283,8 @@ export async function POST(req: NextRequest) {
         const result = await agent.execute(agentContext, enrichedMessages, (text) => {
           send({ type: "agent_stream", agentType: step.agentType, text });
         });
+
+        console.log(`[execute-step] ${step.agentType} completed: stopReason=${result.stopReason}, outputTokens=${result.output.tokenUsage.output}, contentLength=${result.rawContent.length}`);
 
         // Save output to agent_tasks DB (always do this first)
         await db

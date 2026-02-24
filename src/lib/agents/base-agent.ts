@@ -16,6 +16,7 @@ export interface AgentContext {
 export interface AgentResult {
   output: AgentOutput;
   rawContent: string;
+  stopReason: string | null;
 }
 
 export class BaseAgent {
@@ -54,6 +55,7 @@ export class BaseAgent {
         },
       },
       rawContent: response.content,
+      stopReason: response.stopReason,
     };
   }
 
