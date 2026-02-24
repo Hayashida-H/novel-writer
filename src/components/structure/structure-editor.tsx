@@ -78,7 +78,8 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
   const [generatingArcId, setGeneratingArcId] = useState<string | null>(null);
   const [isStructureChecking, setIsStructureChecking] = useState(false);
   const [structureCheckResult, setStructureCheckResult] = useState<ConsistencyResult | null>(null);
-  const [checkAgentStatus, setCheckAgentStatus] = useState<"idle" | "running" | "completed">("idle");
+  const [fixSummary, setFixSummary] = useState("");
+  const [agentStatuses, setAgentStatuses] = useState<Record<string, "idle" | "running" | "completed">>({});
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -309,14 +310,36 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
     }
   }, [projectId]);
 
-  // Structure-level consistency check
+  // Structure-level consistency check + plot fix (2-step pipeline)
   const handleStructureCheck = useCallback(async () => {
     setIsStructureChecking(true);
     setStructureCheckResult(null);
-    setCheckAgentStatus("idle");
+    setFixSummary("");
+    setAgentStatuses({ continuity_checker: "idle", plot_architect: "idle" });
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    // Build current synopsis list for plot_architect
+    const synopsisParts: string[] = [];
+    const sortedArcs = [...arcs].sort((a, b) => a.arcNumber - b.arcNumber);
+    for (const arc of sortedArcs) {
+      const arcChapters = chapters
+        .filter((c) => c.arcId === arc.id)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      const chLines = arcChapters
+        .map((c) => `- 第${c.chapterNumber}話「${c.title || "無題"}」: ${c.synopsis || "あらすじなし"}`)
+        .join("\n");
+      synopsisParts.push(`## 第${arc.arcNumber}章「${arc.title}」\n${arc.description || ""}\n${chLines}`);
+    }
+    const unassigned = chapters.filter((c) => !c.arcId).sort((a, b) => a.chapterNumber - b.chapterNumber);
+    if (unassigned.length > 0) {
+      const lines = unassigned
+        .map((c) => `- 第${c.chapterNumber}話「${c.title || "無題"}」: ${c.synopsis || "あらすじなし"}`)
+        .join("\n");
+      synopsisParts.push(`## 未分類\n${lines}`);
+    }
+    const synopsisInfo = synopsisParts.join("\n\n");
 
     try {
       const res = await fetch("/api/agents/execute", {
@@ -343,6 +366,35 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
                 },
               ],
             },
+            {
+              agentType: "plot_architect",
+              taskType: "structure_fix",
+              description: "構成チェックに基づくあらすじ修正",
+              dependsOn: [0],
+              messages: [
+                {
+                  role: "user",
+                  content: `前ステップの構成チェック結果に基づいて、各章・各話のあらすじを修正してください。
+
+現在の構成:
+${synopsisInfo}
+
+修正方針:
+- チェックで指摘された問題を解消するようにあらすじを調整
+- ストーリーフローが自然になるよう章間の繋がりを改善
+- 伏線のタイミングを適切に調整
+- 修正不要な話はそのまま（全話修正する必要はない）
+
+以下のJSON形式のみを出力してください。他のテキストは含めないでください:
+{
+  "revisions": [
+    { "chapterNumber": 話番号, "synopsis": "修正後のあらすじ" }
+  ],
+  "changesSummary": "何をどう変更したかの要約"
+}`,
+                },
+              ],
+            },
           ],
         }),
         signal: controller.signal,
@@ -354,9 +406,8 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-      let agentContent = "";
-      let fullStreamText = "";
-      let resultSet = false;
+      let checkContent = "";
+      let plotContent = "";
 
       while (true) {
         const { done, value } = await reader.read();
@@ -372,18 +423,14 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
           if (jsonStr === "[DONE]") continue;
           try {
             const event = JSON.parse(jsonStr);
-            if (event.type === "agent_start") {
-              setCheckAgentStatus("running");
-            } else if (event.type === "agent_stream" && event.text) {
-              fullStreamText += event.text;
-            } else if (event.type === "agent_complete" && event.output?.content) {
-              agentContent = event.output.content;
-              setCheckAgentStatus("completed");
-            } else if (event.type === "pipeline_complete") {
-              const content = agentContent || fullStreamText;
-              if (content) {
-                setStructureCheckResult(parseConsistencyResult(content));
-                resultSet = true;
+            if (event.type === "agent_start" && event.agentType) {
+              setAgentStatuses((prev) => ({ ...prev, [event.agentType]: "running" }));
+            } else if (event.type === "agent_complete" && event.agentType && event.output?.content) {
+              setAgentStatuses((prev) => ({ ...prev, [event.agentType]: "completed" }));
+              if (event.agentType === "continuity_checker") {
+                checkContent = event.output.content;
+              } else if (event.agentType === "plot_architect") {
+                plotContent = event.output.content;
               }
             } else if (event.type === "error") {
               throw new Error(event.message || "チェック中にエラーが発生しました");
@@ -394,16 +441,48 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
         }
       }
 
-      // Fallback: if stream ended without pipeline_complete (e.g. timeout)
-      if (!resultSet) {
-        const content = agentContent || fullStreamText;
-        if (content) {
-          setStructureCheckResult(parseConsistencyResult(content));
+      // Parse check results
+      if (checkContent) {
+        setStructureCheckResult(parseConsistencyResult(checkContent));
+      }
+
+      // Parse and apply plot revisions
+      if (plotContent) {
+        try {
+          const jsonMatch = plotContent.match(/\{[\s\S]*"revisions"[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.revisions && Array.isArray(parsed.revisions)) {
+              let savedCount = 0;
+              for (const rev of parsed.revisions) {
+                const chapter = chapters.find((c) => c.chapterNumber === rev.chapterNumber);
+                if (chapter && rev.synopsis) {
+                  const updateRes = await fetch("/api/chapters", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: chapter.id, synopsis: rev.synopsis }),
+                  });
+                  if (updateRes.ok) savedCount++;
+                }
+              }
+              // Refresh chapters to show updated synopses
+              if (savedCount > 0) {
+                const chapRes = await fetch(`/api/chapters?projectId=${projectId}`);
+                if (chapRes.ok) setChapters(await chapRes.json());
+              }
+              setFixSummary(
+                parsed.changesSummary || `${savedCount}話のあらすじを修正しました`
+              );
+            }
+          }
+        } catch (e) {
+          console.error("Failed to apply revisions:", e);
+          setFixSummary("あらすじの自動修正に失敗しました。チェック結果を参考に手動で修正してください。");
         }
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        // User cancelled — no error to show
+        // User cancelled
       } else {
         console.error("Structure check error:", error);
         setStructureCheckResult({
@@ -422,10 +501,10 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
       }
     } finally {
       setIsStructureChecking(false);
-      setCheckAgentStatus("idle");
+      setAgentStatuses({});
       abortControllerRef.current = null;
     }
-  }, [projectId]);
+  }, [projectId, arcs, chapters]);
 
   const handleCancelStructureCheck = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -540,12 +619,12 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
         </div>
 
         {/* Structure Check Result */}
-        {(isStructureChecking || structureCheckResult) && (
+        {(isStructureChecking || structureCheckResult || fixSummary) && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="flex items-center gap-2 text-base">
                 <ShieldCheck className="h-4 w-4" />
-                構成チェック結果
+                構成チェック{fixSummary ? " & 修正" : ""}結果
               </CardTitle>
               {isStructureChecking && (
                 <Button
@@ -559,35 +638,63 @@ export function StructureEditor({ projectId }: StructureEditorProps) {
                 </Button>
               )}
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {isStructureChecking ? (
-                <div className="flex items-center gap-3">
-                  <span
-                    className={`inline-flex h-6 w-7 items-center justify-center rounded text-[10px] font-bold ${
-                      checkAgentStatus === "completed"
-                        ? "bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300"
-                        : checkAgentStatus === "running"
-                          ? "bg-blue-200 text-blue-700 dark:bg-blue-900 dark:text-blue-300 animate-pulse"
-                          : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
-                    }`}
-                    title="整合性チェック"
-                  >
-                    Cc
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {checkAgentStatus === "running"
-                      ? "整合性エージェントが構成をチェック中..."
-                      : checkAgentStatus === "completed"
-                        ? "結果を解析中..."
-                        : "準備中..."}
-                  </span>
+                <div className="space-y-3">
+                  {/* Agent icons */}
+                  <div className="flex items-center gap-3">
+                    {[
+                      { key: "continuity_checker", abbrev: "Cc", label: "整合性チェック" },
+                      { key: "plot_architect", abbrev: "Pl", label: "プロット修正" },
+                    ].map(({ key, abbrev, label }) => {
+                      const status = agentStatuses[key] || "idle";
+                      const colorClass =
+                        status === "completed"
+                          ? "bg-green-200 text-green-700 dark:bg-green-900 dark:text-green-300"
+                          : status === "running"
+                            ? "bg-blue-200 text-blue-700 dark:bg-blue-900 dark:text-blue-300 animate-pulse"
+                            : "bg-gray-200 text-gray-500 dark:bg-gray-700 dark:text-gray-400";
+                      return (
+                        <span
+                          key={key}
+                          className={`inline-flex h-6 w-7 items-center justify-center rounded text-[10px] font-bold ${colorClass}`}
+                          title={label}
+                        >
+                          {abbrev}
+                        </span>
+                      );
+                    })}
+                    <span className="text-sm text-muted-foreground">
+                      {agentStatuses.plot_architect === "running"
+                        ? "プロット担当があらすじを修正中..."
+                        : agentStatuses.plot_architect === "completed"
+                          ? "修正を保存中..."
+                          : agentStatuses.continuity_checker === "running"
+                            ? "整合性をチェック中..."
+                            : agentStatuses.continuity_checker === "completed"
+                              ? "チェック完了、修正を開始..."
+                              : "準備中..."}
+                    </span>
+                  </div>
                 </div>
               ) : (
-                <ConsistencyResultDisplay
-                  result={structureCheckResult}
-                  isChecking={false}
-                  streamingText=""
-                />
+                <>
+                  <ConsistencyResultDisplay
+                    result={structureCheckResult}
+                    isChecking={false}
+                    streamingText=""
+                  />
+                  {fixSummary && (
+                    <div className="rounded-md border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950">
+                      <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                        プロット担当による修正
+                      </p>
+                      <p className="mt-1 text-sm text-green-700 dark:text-green-300">
+                        {fixSummary}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
