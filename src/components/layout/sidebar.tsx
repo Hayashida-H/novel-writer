@@ -43,16 +43,16 @@ const navItems = [
     ],
   },
   {
-    group: "チェック",
-    items: [
-      { href: "prepare/consistency", label: "整合性チェック", icon: ShieldCheck },
-    ],
-  },
-  {
     group: "執筆",
     items: [
       { href: "write", label: "執筆", icon: PenTool },
       { href: "review", label: "レビュー", icon: Eye },
+    ],
+  },
+  {
+    group: "チェック",
+    items: [
+      { href: "prepare/consistency", label: "整合性チェック", icon: ShieldCheck },
     ],
   },
   {
