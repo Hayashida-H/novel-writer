@@ -78,5 +78,5 @@ export const EDITOR_CONFIG = {
   agentType: "editor" as AgentType,
   model: "claude-sonnet-4-20250514",
   temperature: 0.3,
-  maxTokens: 8192,
+  maxTokens: 16384,
 };

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, isNull } from "drizzle-orm";
 import { requireAuth } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -121,7 +121,9 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-// Cancel all running/queued tasks for a project
+// Cancel or purge tasks for a project
+// ?projectId=xxx                → cancel running/queued tasks (project-wide)
+// ?projectId=xxx&chapterId=yyy  → purge ALL tasks for that chapter (physical delete)
 export async function DELETE(req: NextRequest) {
   const authResult = await requireAuth(req);
   if (authResult instanceof NextResponse) return authResult;
@@ -132,6 +134,23 @@ export async function DELETE(req: NextRequest) {
     }
 
     const db = getDb();
+    const chapterId = req.nextUrl.searchParams.get("chapterId");
+
+    if (chapterId) {
+      // Purge all tasks for this specific chapter (for re-run from scratch)
+      const deleted = await db
+        .delete(agentTasks)
+        .where(
+          and(
+            eq(agentTasks.projectId, projectId),
+            eq(agentTasks.chapterId, chapterId)
+          )
+        )
+        .returning({ id: agentTasks.id });
+      return NextResponse.json({ deleted: deleted.length });
+    }
+
+    // Default: cancel running/queued tasks project-wide
     const cancelled = await db
       .update(agentTasks)
       .set({ status: "cancelled", completedAt: new Date() })

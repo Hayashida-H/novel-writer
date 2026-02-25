@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { agentTasks, chapters } from "@/lib/db/schema";
-import { eq, and, inArray, desc } from "drizzle-orm";
+import { eq, and, inArray, desc, isNull } from "drizzle-orm";
 import { getClaudeClient } from "@/lib/claude/client";
 import { createSSEStream } from "@/lib/claude/streaming";
 import { AgentPipeline } from "@/lib/agents/pipeline";
@@ -205,19 +205,19 @@ export async function POST(req: NextRequest) {
     // Run pipeline in the background
     (async () => {
       try {
-        // Cancel stale running/queued tasks for this chapter to avoid zombie accumulation
-        if (chapterId) {
-          await db
-            .update(agentTasks)
-            .set({ status: "cancelled", completedAt: new Date() })
-            .where(
-              and(
-                eq(agentTasks.projectId, projectId),
-                eq(agentTasks.chapterId, chapterId),
-                inArray(agentTasks.status, ["queued", "running"])
-              )
-            );
-        }
+        // Cancel stale running/queued tasks to avoid zombie accumulation
+        await db
+          .update(agentTasks)
+          .set({ status: "cancelled", completedAt: new Date() })
+          .where(
+            and(
+              eq(agentTasks.projectId, projectId),
+              chapterId
+                ? eq(agentTasks.chapterId, chapterId)
+                : isNull(agentTasks.chapterId),
+              inArray(agentTasks.status, ["queued", "running"])
+            )
+          );
 
         // Create task records for tracking
         const taskIds: string[] = [];
@@ -259,9 +259,10 @@ export async function POST(req: NextRequest) {
           preloadedOutputs,
           formatOptions,
           onEvent: async (event: StreamEvent) => {
-            send(event);
+            // Send to SSE stream (may fail if client disconnected)
+            try { send(event); } catch { /* stream closed, continue DB updates */ }
 
-            // Update task status in DB
+            // Update task status in DB (must run even if stream is closed)
             if (event.type === "agent_start" && event.agentType) {
               const stepIndex = steps.findIndex((s) => s.agentType === event.agentType);
               if (stepIndex >= 0 && taskIds[stepIndex]) {
@@ -410,11 +411,11 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        close();
+        try { close(); } catch { /* stream already closed */ }
       } catch (error) {
         const message = error instanceof Error ? error.message : "Pipeline execution failed";
-        send({ type: "error", message });
-        close();
+        try { send({ type: "error", message }); } catch { /* stream closed */ }
+        try { close(); } catch { /* stream already closed */ }
       }
     })();
 

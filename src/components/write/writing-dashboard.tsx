@@ -297,8 +297,8 @@ export function WritingDashboard({ projectId }: WritingDashboardProps) {
 
   // Start writing from scratch (all 6 steps)
   const handleWriteEpisode = useCallback(async (chapterId: string) => {
-    // Cancel stale tasks first
-    await fetch(`/api/agent-tasks?projectId=${projectId}`, { method: "DELETE" });
+    // Purge all old tasks for this chapter so icons start clean
+    await fetch(`/api/agent-tasks?projectId=${projectId}&chapterId=${chapterId}`, { method: "DELETE" });
     // Reset task state so agent icons go back to white (not_started)
     setTasks((prev) => prev.filter((t) => t.chapterId !== chapterId));
     await executeStepByStep(chapterId, 0);
