@@ -268,12 +268,32 @@ export async function POST(req: NextRequest) {
 
     try { send({ type: "agent_start", agentType: step.agentType }); } catch { /* stream closed */ }
 
-    // Execute agent in background
+    // Execute agent in background (with retry on overloaded errors)
     (async () => {
       try {
-        const result = await agent.execute(agentContext, enrichedMessages, (text) => {
-          try { send({ type: "agent_stream", agentType: step.agentType, text }); } catch { /* stream closed */ }
-        });
+        const MAX_RETRIES = 3;
+        let result: Awaited<ReturnType<typeof agent.execute>> | null = null;
+
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            result = await agent.execute(agentContext, enrichedMessages, (text) => {
+              try { send({ type: "agent_stream", agentType: step.agentType, text }); } catch { /* stream closed */ }
+            });
+            break; // success
+          } catch (err) {
+            const isOverloaded = err instanceof Error && err.message.includes("overloaded");
+            if (isOverloaded && attempt < MAX_RETRIES) {
+              const delay = (attempt + 1) * 15_000; // 15s, 30s, 45s
+              console.log(`[execute-step] ${step.agentType} overloaded, retrying in ${delay / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+              try { send({ type: "agent_stream", agentType: step.agentType, text: `\n[サーバー混雑のためリトライ中... ${attempt + 1}/${MAX_RETRIES}]\n` }); } catch { /* stream closed */ }
+              await new Promise((r) => setTimeout(r, delay));
+              continue;
+            }
+            throw err; // non-retryable or max retries exceeded
+          }
+        }
+
+        if (!result) throw new Error("Unexpected: no result after retries");
 
         console.log(`[execute-step] ${step.agentType} completed: stopReason=${result.stopReason}, outputTokens=${result.output.tokenUsage.output}, contentLength=${result.rawContent.length}`);
 
