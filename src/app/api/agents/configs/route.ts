@@ -25,11 +25,18 @@ export async function GET(req: NextRequest) {
     const defaults = getAllDefaultConfigs();
     const savedMap = new Map(savedConfigs.map((c) => [c.agentType, c]));
 
-    // Merge saved configs with defaults for any missing agent types
+    // Merge saved configs with code defaults.
+    // systemPrompt and maxTokens always come from code (single source of truth).
+    // DB provides model, temperature, and per-project customization.
     const merged = defaults.map((d) => {
       const saved = savedMap.get(d.agentType);
       if (saved) {
-        return { ...saved, isDefault: false };
+        return {
+          ...saved,
+          systemPrompt: d.systemPrompt,
+          maxTokens: d.maxTokens,
+          isDefault: false,
+        };
       }
       return {
         id: null,

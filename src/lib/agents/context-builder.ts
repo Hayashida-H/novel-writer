@@ -270,13 +270,16 @@ export async function buildAgentContext(
   const dbConfig = configRows[0];
   const defaultConfig = getDefaultConfig(agentType);
 
+  // Always use code defaults for systemPrompt and maxTokens —
+  // these are maintained in code and must propagate updates immediately.
+  // DB is used for model, temperature, and per-project customization fields.
   return {
     projectId,
     chapterId,
-    systemPrompt: dbConfig?.systemPrompt ?? defaultConfig.systemPrompt,
+    systemPrompt: defaultConfig.systemPrompt,
     model: dbConfig?.model ?? defaultConfig.model,
     temperature: dbConfig?.temperature ?? defaultConfig.temperature,
-    maxTokens: dbConfig?.maxTokens ?? defaultConfig.maxTokens,
+    maxTokens: defaultConfig.maxTokens,
     customInstructions: dbConfig?.customInstructions ?? undefined,
     styleProfile: dbConfig?.styleProfile ?? undefined,
   };
