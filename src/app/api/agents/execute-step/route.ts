@@ -171,15 +171,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Diagnostic: check if DB has agent config overrides for this project
-    const { agentConfigs } = await import("@/lib/db/schema");
-    const dbConfigs = await db.select({ agentType: agentConfigs.agentType, maxTokens: agentConfigs.maxTokens }).from(agentConfigs).where(eq(agentConfigs.projectId, projectId));
-    if (dbConfigs.length > 0) {
-      console.log(`[execute-step] DB agentConfigs for project: ${dbConfigs.map(c => `${c.agentType}(maxTokens=${c.maxTokens})`).join(", ")}`);
-    } else {
-      console.log(`[execute-step] No DB agentConfigs found — using defaults`);
-    }
-
     const allSteps = buildWritingPipeline(chapter.chapterNumber);
     if (stepIndex < 0 || stepIndex >= allSteps.length) {
       return new Response(
@@ -235,11 +226,14 @@ export async function POST(req: NextRequest) {
     const agent = new BaseAgent(step.agentType, client);
     const projectContext = await buildProjectContext(projectId);
     const chapterContext = await buildChapterContext(projectId, chapterId, projectContext.plotPoints);
-    const contextPrompt = formatContextForPrompt(projectContext, chapterContext);
+    const contextPrompt = formatContextForPrompt(projectContext, chapterContext, {
+      includePlotPoints: false,
+      includeStyleReferences: true,
+      includeChapterSummaries: true,
+      includeChapterSynopses: true,
+    });
     const agentContext = await buildAgentContext(projectId, step.agentType, chapterId);
-    const hasDbOverride = agentContext.systemPrompt !== (await import("@/lib/agents/prompts")).getDefaultConfig(step.agentType).systemPrompt;
-    const promptSnippet = agentContext.systemPrompt.includes("3,000文字") ? "⚠️ OLD(3000)" : agentContext.systemPrompt.includes("6,000") ? "✓ NEW(6000-10000)" : "? UNKNOWN";
-    console.log(`[execute-step] Starting ${step.agentType}: model=${agentContext.model}, maxTokens=${agentContext.maxTokens}, dbOverride=${hasDbOverride}, promptTarget=${promptSnippet}, promptLength=${agentContext.systemPrompt.length}`);
+    console.log(`[execute-step] Starting ${step.agentType}: model=${agentContext.model}, maxTokens=${agentContext.maxTokens}`);
 
     // Enrich messages with project context + dependent outputs (labeled by agent)
     const contextParts: string[] = [contextPrompt];
@@ -272,18 +266,18 @@ export async function POST(req: NextRequest) {
     // Create SSE stream for this single step
     const { stream, send, close } = createSSEStream();
 
-    send({ type: "agent_start", agentType: step.agentType });
+    try { send({ type: "agent_start", agentType: step.agentType }); } catch { /* stream closed */ }
 
     // Execute agent in background
     (async () => {
       try {
         const result = await agent.execute(agentContext, enrichedMessages, (text) => {
-          send({ type: "agent_stream", agentType: step.agentType, text });
+          try { send({ type: "agent_stream", agentType: step.agentType, text }); } catch { /* stream closed */ }
         });
 
         console.log(`[execute-step] ${step.agentType} completed: stopReason=${result.stopReason}, outputTokens=${result.output.tokenUsage.output}, contentLength=${result.rawContent.length}`);
 
-        // Save output to agent_tasks DB (always do this first)
+        // Save output to agent_tasks DB (always do this first, even if stream is closed)
         await db
           .update(agentTasks)
           .set({
@@ -300,12 +294,9 @@ export async function POST(req: NextRequest) {
         // Post-step actions: save chapter content (non-fatal — output is already in agent_tasks)
         if (step.agentType === "writer" || step.agentType === "editor") {
           try {
-            console.log(`[execute-step] ${step.agentType} rawContent length=${result.rawContent.length}`);
             const content = step.agentType === "editor"
               ? extractEditorContent(result.rawContent)
               : result.output.content.replace(/<!-- SPLIT_SUGGESTION:[\s\S]*?-->/g, "").trim();
-
-            console.log(`[execute-step] ${step.agentType} extracted content length=${content.length}`);
 
             if (content) {
               await db
@@ -318,8 +309,7 @@ export async function POST(req: NextRequest) {
                 })
                 .where(eq(chapters.id, chapterId));
 
-              console.log(`[execute-step] Chapter ${chapterId} content saved (${content.length} chars) by ${step.agentType}`);
-            // Generate summary after editor saves final content
+              console.log(`[execute-step] Chapter content saved (${content.length} chars) by ${step.agentType}`);
               if (step.agentType === "editor") {
                 try {
                   await generateChapterSummary(chapterId);
@@ -327,21 +317,16 @@ export async function POST(req: NextRequest) {
                   console.error("Failed to generate summary:", err);
                 }
               }
-            } else {
-              console.warn(`[execute-step] No extractable content from ${step.agentType}, skipping chapter update`);
             }
           } catch (err) {
             console.error(`[execute-step] Failed to update chapter content for ${step.agentType}:`, err);
           }
         }
 
-        // Always send agent_complete — output is safely stored in agent_tasks
-        send({
-          type: "agent_complete",
-          agentType: step.agentType,
-          output: result.output,
-        });
-        close();
+        try {
+          send({ type: "agent_complete", agentType: step.agentType, output: result.output });
+          close();
+        } catch { /* stream closed */ }
       } catch (error) {
         console.error(`[execute-step] Step ${step.agentType} failed:`, error);
         try {
@@ -357,11 +342,13 @@ export async function POST(req: NextRequest) {
           console.error("[execute-step] Failed to mark task as failed:", dbErr);
         }
 
-        send({
-          type: "error",
-          message: error instanceof Error ? error.message : "ステップの実行に失敗しました",
-        });
-        close();
+        try {
+          send({
+            type: "error",
+            message: error instanceof Error ? error.message : "ステップの実行に失敗しました",
+          });
+          close();
+        } catch { /* stream closed */ }
       }
     })();
 
