@@ -46,9 +46,8 @@ export interface ChapterContext {
   title: string | null;
   synopsis: string | null;
   chapterPlotPoints: { title: string; description: string; act: string }[];
-  previousChapterContent: string | null;
   previousChapterSummary: string | null;
-  recentChapterSummaries: { chapterNumber: number; title: string | null; summaryBrief: string | null }[];
+  recentChapterSummaries: { chapterNumber: number; title: string | null; summaryDetailed: string | null }[];
 }
 
 export async function buildProjectContext(projectId: string): Promise<ProjectContext> {
@@ -183,7 +182,6 @@ export async function buildChapterContext(
       title: null,
       synopsis: null,
       chapterPlotPoints: [],
-      previousChapterContent: null,
       previousChapterSummary: null,
       recentChapterSummaries: [],
     };
@@ -195,14 +193,12 @@ export async function buildChapterContext(
     ? allPlotPoints.filter((pp) => chapterPlotPointIds.includes(pp.id))
     : [];
 
-  // Get previous chapters for context (summaries of all earlier, + full content of immediately previous)
+  // Get previous chapters for context (summaryDetailed only — no full content)
   const prevChapters = await db
     .select({
       chapterNumber: chapters.chapterNumber,
       title: chapters.title,
-      summaryBrief: chapters.summaryBrief,
       summaryDetailed: chapters.summaryDetailed,
-      content: chapters.content,
     })
     .from(chapters)
     .where(
@@ -213,30 +209,18 @@ export async function buildChapterContext(
     )
     .orderBy(asc(chapters.chapterNumber));
 
-  // Immediately previous chapter (full content or detailed summary)
+  // Immediately previous chapter — detailed summary only
   const immediatePrev = prevChapters.length > 0 ? prevChapters[prevChapters.length - 1] : null;
+  const previousChapterSummary = immediatePrev?.summaryDetailed ?? null;
 
-  // Use detailed summary if available, otherwise truncated content
-  let previousChapterContent: string | null = null;
-  let previousChapterSummary: string | null = null;
-  if (immediatePrev) {
-    previousChapterSummary = immediatePrev.summaryDetailed || immediatePrev.summaryBrief || null;
-    // Include full content of previous chapter (truncate if very long)
-    if (immediatePrev.content) {
-      previousChapterContent = immediatePrev.content.length > 6000
-        ? immediatePrev.content.slice(0, 6000) + "\n\n…（以降省略）"
-        : immediatePrev.content;
-    }
-  }
-
-  // Recent chapter summaries (up to 5 chapters back, excluding the immediately previous one which we include in detail)
+  // Earlier chapter summaries (up to 5 chapters back, excluding the immediately previous)
   const recentSummaries = prevChapters
-    .slice(0, -1) // exclude the immediately previous (already handled above)
-    .slice(-5) // last 5 before that
+    .slice(0, -1)
+    .slice(-5)
     .map((ch) => ({
       chapterNumber: ch.chapterNumber,
       title: ch.title,
-      summaryBrief: ch.summaryBrief,
+      summaryDetailed: ch.summaryDetailed,
     }));
 
   return {
@@ -244,7 +228,6 @@ export async function buildChapterContext(
     title: chapter.title,
     synopsis: chapter.synopsis,
     chapterPlotPoints,
-    previousChapterContent,
     previousChapterSummary,
     recentChapterSummaries: recentSummaries,
   };
@@ -328,22 +311,15 @@ export function formatContextForPrompt(
       chSections.push(`## この話で扱うプロットポイント\n${cpList}`);
     }
 
-    // Previous chapter (detailed)
-    if (chapterContext.previousChapterSummary || chapterContext.previousChapterContent) {
-      let prevSection = `## 前話（第${chapterContext.chapterNumber - 1}話）の内容`;
-      if (chapterContext.previousChapterSummary) {
-        prevSection += `\n### 要約\n${chapterContext.previousChapterSummary}`;
-      }
-      if (chapterContext.previousChapterContent) {
-        prevSection += `\n### 本文\n${chapterContext.previousChapterContent}`;
-      }
-      chSections.push(prevSection);
+    // Previous chapter (summary only)
+    if (chapterContext.previousChapterSummary) {
+      chSections.push(`## 前話（第${chapterContext.chapterNumber - 1}話）の要約\n${chapterContext.previousChapterSummary}`);
     }
 
     // Earlier chapter summaries
     if (chapterContext.recentChapterSummaries.length > 0) {
       const summList = chapterContext.recentChapterSummaries
-        .map((ch) => `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryBrief ?? "要約なし"}`)
+        .map((ch) => `- 第${ch.chapterNumber}話${ch.title ? `「${ch.title}」` : ""}: ${ch.summaryDetailed ?? "要約なし"}`)
         .join("\n");
       chSections.push(`## それ以前の話の要約\n${summList}`);
     }
